@@ -15,4 +15,4 @@ RUN apt-get update -qq && apt-get install --no-install-recommends -y libpq5 && r
 COPY --from=build /usr/local/bundle /usr/local/bundle
 COPY --from=build /app /app
 EXPOSE 8080
-CMD ["sh", "-c", "bin/rails db:prepare && bin/rails server -b 0.0.0.0 -p ${PORT:-8080}"]
+CMD ["sh", "-c", "bundle exec rails db:prepare && bundle exec rails server -b 0.0.0.0 -p ${PORT:-8080}"]
