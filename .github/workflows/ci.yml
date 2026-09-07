@@ -33,14 +33,18 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
       - name: Security scan
-        run: bin/brakeman --no-pager
+        run: bundle exec brakeman --no-pager
       - name: Lint
-        run: bin/rubocop -f github
-      - name: Test
+        run: bundle exec rubocop -f github
+      - name: Zeitwerk
+        env:
+          RAILS_ENV: test
+        run: bundle exec rails zeitwerk:check
+      - name: RSpec
         env:
           RAILS_ENV: test
           DATABASE_URL: postgresql://anabuki:anabuki@localhost:5432/anabuki_event_rails_test
-        run: bin/rails db:prepare test
+        run: bundle exec rails db:prepare && bundle exec rspec
 
   notify-parent:
     needs: check

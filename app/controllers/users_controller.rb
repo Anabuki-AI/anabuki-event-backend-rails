@@ -21,6 +21,8 @@ class UsersController < ApplicationController
   # The established Nuxt API sends a flat camelCase JSON object, rather than a
   # Rails-namespaced `user` object. Keep that contract during the migration.
   def user_params
+    # Keep reading the root payload: ParamsWrapper may create a partial `user`
+    # hash from model attributes, while the established API is flat camelCase.
     {
       user_name: params[:userName],
       email: params[:email],

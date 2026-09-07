@@ -9,7 +9,7 @@ Bundler.require(*Rails.groups)
 module AnabukiEventBackendRails
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.
-    config.load_defaults 8.0
+    config.load_defaults 8.1
 
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
@@ -28,6 +28,10 @@ module AnabukiEventBackendRails
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+
+    # Que stores Active Job payloads in PostgreSQL and processes them in a separate worker.
+    config.active_job.queue_adapter = :que
+    config.active_record.schema_format = :sql
 
     # API-only applications omit cookie middleware by default. Admin sessions are
     # HttpOnly, SameSite=Lax cookies, never Rails server-side browser sessions.
