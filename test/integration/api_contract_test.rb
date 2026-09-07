@@ -9,7 +9,7 @@ class ApiContractTest < ActionDispatch::IntegrationTest
   end
 
   test "user creation preserves the flat camelCase request and response contract" do
-    post "/api/users", params: { userName: "Example", email: "example@example.com", password: "secure-password" }, as: :json
+    post "/api/users", params: JSON.generate(userName: "Example", email: "example@example.com", password: "secure-password"), headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "application/json" }
 
     assert_response :created, response.body
     assert_equal %w[email id userName], response.parsed_body.keys.sort
