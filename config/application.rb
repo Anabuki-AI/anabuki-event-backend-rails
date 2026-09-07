@@ -29,6 +29,10 @@ module AnabukiEventBackendRails
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
 
+    # Que stores Active Job payloads in PostgreSQL and processes them in a separate worker.
+    config.active_job.queue_adapter = :que
+    config.active_record.schema_format = :sql
+
     # API-only applications omit cookie middleware by default. Admin sessions are
     # HttpOnly, SameSite=Lax cookies, never Rails server-side browser sessions.
     config.middleware.use ActionDispatch::Cookies

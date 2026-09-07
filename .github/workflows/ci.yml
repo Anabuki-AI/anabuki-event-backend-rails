@@ -36,11 +36,15 @@ jobs:
         run: bundle exec brakeman --no-pager
       - name: Lint
         run: bundle exec rubocop -f github
-      - name: Test
+      - name: Zeitwerk
+        env:
+          RAILS_ENV: test
+        run: bundle exec rails zeitwerk:check
+      - name: RSpec
         env:
           RAILS_ENV: test
           DATABASE_URL: postgresql://anabuki:anabuki@localhost:5432/anabuki_event_rails_test
-        run: bundle exec rails db:prepare test
+        run: bundle exec rails db:prepare && bundle exec rspec
 
   notify-parent:
     needs: check
