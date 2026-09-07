@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: anabuki
+          POSTGRES_PASSWORD: anabuki
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U anabuki"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+      - name: Security scan
+        run: bin/brakeman --no-pager
+      - name: Lint
+        run: bin/rubocop -f github
+      - name: Test
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgresql://anabuki:anabuki@localhost:5432/anabuki_event_rails_test
+        run: bin/rails db:prepare test
+
+  notify-parent:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch successful Rails main commit
+        env:
+          PARENT_REPOSITORY_TOKEN: ${{ secrets.PARENT_REPOSITORY_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PARENT_REPOSITORY_TOKEN" ]; then
+            echo "::warning::PARENT_REPOSITORY_TOKEN is not configured; skipping parent update."
+            exit 0
+          fi
+          curl --fail-with-body --request POST \
+            --url "https://api.github.com/repos/Anabuki-AI/anabuki-event/dispatches" \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${PARENT_REPOSITORY_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --data "{\"event_type\":\"submodule-main-succeeded\",\"client_payload\":{\"repository\":\"Anabuki-AI/anabuki-event-backend-rails\",\"sha\":\"${SHA}\"}}"
