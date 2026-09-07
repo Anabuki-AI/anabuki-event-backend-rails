@@ -19,7 +19,6 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 
 # Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
 gem "solid_cache"
-gem "solid_queue"
 gem "solid_cable"
 
 # Reduces boot times through caching; required in config/boot.rb
@@ -33,10 +32,14 @@ gem "thruster", require: false
 
 # Use Rack CORS for handling Cross-Origin Resource Sharing (CORS), making cross-origin Ajax possible
 gem "rack-cors", "~> 2.0"
+
+gem "que", "~> 2.4"
+gem "sentry-rails", "~> 7.0"
 # Rails 8.1 calls JSON.parse with options; json 3.0 removed that API.
 gem "json", "< 3.0"
 
 group :development, :test do
+  gem "rspec-rails", "~> 8.0"
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
 
