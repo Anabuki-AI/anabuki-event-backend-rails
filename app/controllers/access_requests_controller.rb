@@ -43,7 +43,7 @@ class AccessRequestsController < ApplicationController
     {
       id: request.id,
       email: request.email,
-      status: request.status,
+      status: AdminAccessRequest.statuses.fetch(request.status),
       createdAt: request.created_at.iso8601,
       expiresAt: request.expires_at.iso8601,
       cancelledAt: request.cancelled_at&.iso8601,
