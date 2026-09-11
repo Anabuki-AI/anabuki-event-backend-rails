@@ -1,6 +1,5 @@
 class ApplicationController < ActionController::API
   include ActionController::Cookies
-  include Pundit::Authorization
 
   rescue_from ActiveRecord::RecordNotFound do
     render_error("Not found", :not_found)
@@ -13,19 +12,6 @@ class ApplicationController < ActionController::API
   end
 
   private
-
-  # AdminAuth remains the single authority for validating the device-bound
-  # session. Policies receive its already-validated, read-only session context.
-  def pundit_user
-    @pundit_user ||= admin_auth.any_session!
-  end
-
-  def authorize_admin!(record, query)
-    authorize(record, query)
-  rescue Pundit::NotAuthorizedError
-    message = pundit_user.applicant? ? "Management page access is required" : "Required permission is missing"
-    raise AdminAuthError.new(message, :forbidden)
-  end
 
   def render_error(message, status)
     render json: { error: message }, status: status
