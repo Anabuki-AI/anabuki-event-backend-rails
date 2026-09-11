@@ -90,6 +90,25 @@ GET/DELETE /api/admin/allowed-emails(/:id)
 
 Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, and `SECRET_KEY_BASE` must come from a local/deployment secret store. `SECRET_KEY_BASE` is mandatory in production (`bin/rails secret` generates one). Register `GOOGLE_OAUTH_CALLBACK_URL` exactly in Google Cloud Console. Set HTTPS public URLs in production so cookies get the `Secure` flag.
 
+## Testing (RSpec)
+
+```bash
+# Use only an isolated Rails test database; never point this at Java or production data.
+RAILS_ENV=test bundle exec rails db:prepare
+bundle exec rspec --seed 410
+bundle exec rspec --seed 9321
+# Run the user lifecycle or unit specs separately.
+bundle exec rspec spec/requests/google_auth_lifecycle_spec.rb
+bundle exec rspec spec/models spec/services
+```
+
+- `spec/requests/google_auth_spec.rb`: Google OAuth の開始・初回ログイン・再ログイン・state/nonce/ID token 検証失敗。
+- `spec/requests/google_auth_lifecycle_spec.rb`: 独立した Cookie jar を持つ申請者と管理者による、ログイン → 申請 → 承認/却下 → セッション交換 → ログアウト。権限制御・申請取消・Cookie pair 偽装も検証します。
+- `spec/models/` と `spec/services/`: Google identity の一意性・正規化、端末/申請の binding と enum、OAuth state、Origin と allowlist の単体テスト。
+- `spec/jobs/que_integration_spec.rb`: PostgreSQL 上の Que enqueue/execution。
+
+ここでの E2E は **Rails backend の E2E** です。routing・controller・service・Cookie・DB は実物を使い、外部 Google の token endpoint と ID token verifier だけをモックにします。フロントエンド画面や実 Google アカウントによるブラウザ E2E は含みません。Google の実 credentials と Sentry DSN は不要です。
+
 ## CI
 
-GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers removal of the users API, Google OAuth registration/login and callback rejection (with external Google calls stubbed), origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
+GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL for every pull request, including stacked PRs targeting a feature branch. Push checks and parent notifications remain limited to `main`. CI never needs a Sentry DSN, so no event is sent during checks.
