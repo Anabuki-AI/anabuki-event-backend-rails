@@ -248,7 +248,7 @@ RSpec.describe "Google OAuth authentication", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
       "accessSource" => "MANAGEMENT_ACCESS",
-      "permissions" => %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE]
+      "permissions" => %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE MANAGEMENT_ACCESS_REVOKE]
     )
     expect(cookies[AdminAuth::SESSION_COOKIE]).to be_present
     expect(cookies[AdminAuth::APPLICANT_SESSION_COOKIE]).to be_nil

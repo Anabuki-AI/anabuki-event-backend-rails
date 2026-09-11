@@ -11,6 +11,8 @@ gem "puma", ">= 5.0"
 
 # Verifies Google OpenID Connect ID tokens against Google's signing keys.
 gem "googleauth", "~> 1.12"
+# Organizes authorization decisions without replacing the existing AdminAuth flow.
+gem "pundit", "~> 2.5"
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[ windows jruby ]
