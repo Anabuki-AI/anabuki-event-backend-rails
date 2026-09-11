@@ -183,13 +183,13 @@ class AdminAuth
   end
 
   def deactivate_management_access!(id)
-    management_session!("MANAGEMENT_ACCESS_REVOKE")
+    actor = management_session!("MANAGEMENT_ACCESS_REVOKE")
     identity = AdminIdentity.find(id)
-    raise AdminAuthError.new("Environment management access cannot be deactivated", :forbidden) if environment_access?(identity.email)
-    raise AdminAuthError.new("Management access is already inactive or cannot be deactivated", :bad_request) unless identity.admin_enabled?
 
     AdminIdentity.transaction do
       identity.lock!
+      raise AdminAuthError.new("Environment management access cannot be deactivated", :forbidden) if environment_access?(identity.email)
+      raise AdminAuthError.new("Management access cannot be deactivated by its own identity", :forbidden) if identity.id == actor.identity.id
       raise AdminAuthError.new("Management access is already inactive or cannot be deactivated", :bad_request) unless identity.admin_enabled?
 
       now = Time.current
@@ -218,7 +218,7 @@ class AdminAuth
     if environment_access?(identity.email)
       Session.new(record, identity, "ENVIRONMENT_ACCESS", %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE MANAGEMENT_ACCESS_REVOKE])
     elsif identity.admin_enabled? && (record.management_access? || record.environment_access?)
-      Session.new(record, identity, "MANAGEMENT_ACCESS", %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE])
+      Session.new(record, identity, "MANAGEMENT_ACCESS", %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE MANAGEMENT_ACCESS_REVOKE])
     else
       Session.new(record, identity, "APPLICANT", [])
     end

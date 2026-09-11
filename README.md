@@ -10,7 +10,29 @@
 - 初回ログインは `APPLICANT`（管理権限なし）です。`ADMIN_EMAIL_ALLOWLIST` による環境アクセス、または承認済みの管理アクセスだけが管理画面を利用できます。
 - 管理者の device cookie と session cookie はランダム値を HttpOnly/SameSite=Lax で発行し、DBには SHA-256 hash だけを保存します。
 - applicant request は正確な device/session pair に紐付けます。ログアウト、再ログイン、失効、管理権限取消時は未処理申請を `CANCELLED` にします。
+- `ADMIN_EMAIL_ALLOWLIST` は各認証リクエストで再評価する環境アクセスです。承認済み管理者と環境アクセスは、他者の通常管理権限だけを取消できます。自分自身と環境アクセスは取消できません。
 - 状態変更 API は `Origin` が `PUBLIC_BASE_URL` または `ADMIN_FRONTEND_URL` と同一 origin の場合だけ受け付けます（non-browser client は従来どおり Originなしで利用可能）。
+
+## Punditによる管理認可
+
+Pundit は**判定だけ**を担当します。Google OAuth の認証、device-bound な DB セッションの検証、申請と承認の状態遷移は既存の `AdminAuth` が引き続き担当し、Policy は `AdminAuth::Session` が検証済みの permission を読むだけです。
+
+| 権限区分 | 自分の申請 | 管理セッションへのexchange | 申請一覧・承認/却下 | 管理者一覧 | 管理権限の取消 |
+| --- | --- | --- | --- | --- | --- |
+| `APPLICANT` | 可 | 承認済みかつ元の device/session pair のときだけ可 | 不可 | 不可 | 不可 |
+| `MANAGEMENT_ACCESS` | 不可 | 不可 | 可 | 可 | 他者の `MANAGEMENT_ACCESS` のみ可 |
+| `ENVIRONMENT_ACCESS` | 不可 | 不可 | 可 | 可 | 他者の `MANAGEMENT_ACCESS` のみ可 |
+
+`ADMIN_EMAIL_ALLOWLIST` にあるメールアドレスは、申請・承認なしで最初の `ENVIRONMENT_ACCESS` を取得できる初期管理者例外です。この環境アクセスは各認証リクエストで再評価されます。`MANAGEMENT_ACCESS` と `ENVIRONMENT_ACCESS` はどちらも他者の通常管理権限を取消できますが、自分自身および `ENVIRONMENT_ACCESS` は取消できません。
+
+認可を含む確認コマンド:
+
+```bash
+bundle exec rspec
+bundle exec rubocop
+bundle exec rails zeitwerk:check
+bundle exec brakeman --no-pager -q
+```
 
 ## Migration safety
 
@@ -92,4 +114,4 @@ Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, a
 
 ## CI
 
-GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers removal of the users API, Google OAuth registration/login and callback rejection (with external Google calls stubbed), origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
+GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers removal of the users API, Google OAuth registration/login and callback rejection (with external Google calls stubbed), Pundit authorization and admin access revocation, origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
