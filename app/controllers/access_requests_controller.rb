@@ -13,6 +13,7 @@ class AccessRequestsController < ApplicationController
   end
 
   def index
+    authorize_admin!(AdminAccessRequest, :index?)
     render json: admin_auth.pending_access_requests!.map { |request| request_json(request) }
   end
 
@@ -28,6 +29,7 @@ class AccessRequestsController < ApplicationController
 
   def decide(approved)
     require_same_origin!
+    authorize_admin!(AdminAccessRequest, approved ? :approve? : :reject?)
     request = admin_auth.decide_access_request!(id: positive_id!, approved:)
     render json: request_json(request)
   end
