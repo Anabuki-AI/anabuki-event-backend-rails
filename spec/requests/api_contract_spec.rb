@@ -8,21 +8,18 @@ RSpec.describe "API contract", type: :request do
     expect(response.parsed_body).to eq("status" => "ok")
   end
 
-  it "preserves the flat camelCase user creation contract" do
+  it "does not expose password registration" do
     post "/api/users",
-      params: { userName: "Example", email: "example@example.com", password: "secure-password" }.to_json,
-      headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "application/json" }
+      params: { userName: "Example", email: "example@example.com", password: "secure-password" },
+      as: :json
 
-    expect(response).to have_http_status(:created)
-    expect(response.parsed_body.keys).to contain_exactly("email", "id", "userName")
-    expect(response.parsed_body.fetch("userName")).to eq("Example")
+    expect(response).to have_http_status(:not_found)
   end
 
-  it "reports Google as unconfigured without credentials" do
-    get "/api/auth/google/status"
+  it "does not expose the obsolete user lookup" do
+    get "/api/users/1", as: :json
 
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body).to eq("configured" => false)
+    expect(response).to have_http_status(:not_found)
   end
 
   it "requires an authenticated session for the management queue" do

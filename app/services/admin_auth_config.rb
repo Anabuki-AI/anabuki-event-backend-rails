@@ -17,7 +17,13 @@ class AdminAuthConfig
   end
 
   def allowed_origin?(origin)
-    [ public_base_url, admin_frontend_url ].any? { |value| same_origin?(origin, value) }
+    source = URI.parse(origin)
+    return false unless source.is_a?(URI::HTTP) && source.host.present? && source.userinfo.nil? &&
+      source.path.empty? && source.query.nil? && source.fragment.nil?
+
+    [ public_base_url, admin_frontend_url ].any? { |value| same_origin?(source, value) }
+  rescue URI::InvalidURIError
+    false
   end
 
   def environment_access_emails
@@ -36,15 +42,10 @@ class AdminAuthConfig
     false
   end
 
-  def same_origin?(left, right)
-    a = URI.parse(left)
-    b = URI.parse(right)
-    a.scheme&.casecmp?(b.scheme) && a.host&.casecmp?(b.host) && port(a) == port(b)
+  def same_origin?(source, url)
+    target = URI.parse(url)
+    source.scheme.casecmp?(target.scheme) && source.host.casecmp?(target.host) && source.port == target.port
   rescue URI::InvalidURIError
     false
-  end
-
-  def port(uri)
-    uri.port || (uri.scheme == "https" ? 443 : 80)
   end
 end

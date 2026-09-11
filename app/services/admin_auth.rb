@@ -59,7 +59,7 @@ class AdminAuth
     identity = find_or_create_identity!(claims.fetch("email"), claims.fetch("sub"))
     source = environment_access?(identity.email) ? "ENVIRONMENT_ACCESS" : (identity.admin_enabled? ? "MANAGEMENT_ACCESS" : "APPLICANT")
     session_key = token
-    session = upsert_device_session!(identity:, session_key:, source:)
+    upsert_device_session!(identity:, session_key:, source:)
     write_cookie(source == "APPLICANT" ? APPLICANT_SESSION_COOKIE : SESSION_COOKIE, session_key, source == "APPLICANT" ? APPLICANT_TTL : MANAGEMENT_TTL)
     @cookies.delete(OAUTH_STATE_COOKIE, cookie_options)
     @config.admin_frontend_url
@@ -217,7 +217,7 @@ class AdminAuth
 
     if environment_access?(identity.email)
       Session.new(record, identity, "ENVIRONMENT_ACCESS", %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE MANAGEMENT_ACCESS_REVOKE])
-    elsif identity.admin_enabled? && %w[MANAGEMENT_ACCESS ENVIRONMENT_ACCESS].include?(record.access_source)
+    elsif identity.admin_enabled? && (record.management_access? || record.environment_access?)
       Session.new(record, identity, "MANAGEMENT_ACCESS", %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE])
     else
       Session.new(record, identity, "APPLICANT", [])

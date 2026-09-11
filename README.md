@@ -1,12 +1,13 @@
 # Anabuki Event Backend Rails
 
-`anabuki-event-backend` の Javalin API を置き換える Rails 8 API です。Nuxt frontend 互換の `/health`、`/api/users`、Google OAuth と管理者承認 API のレスポンス形式・Cookie名を維持しています。
+`anabuki-event-backend` の Javalin API を置き換える Rails 8 API です。登録・認証は Google OAuth に統一しています。Nuxt frontend 互換の `/health`、Google OAuth と管理者承認 API のレスポンス形式・Cookie名を維持しています。
 
 ## 保護範囲と設計
 
 - PostgreSQL と Active Record migration
-- `POST /api/users` は BCrypt (`has_secure_password`) でパスワードをハッシュ化します。レスポンスに password/digest は含めません。
-- Google OpenID Connect ID token を署名・audience 検証してから identity を作成します。
+- パスワードによる登録・認証や、旧 `/api/users` API は提供しません。互換用のルートや `User` モデルも残しません。
+- Google OpenID Connect ID token の署名・audience・nonce・確認済みメールを検証してから `AdminIdentity` を作成します。再ログインは同じ Google identity を使用します。
+- 初回ログインは `APPLICANT`（管理権限なし）です。`ADMIN_EMAIL_ALLOWLIST` による環境アクセス、または承認済みの管理アクセスだけが管理画面を利用できます。
 - 管理者の device cookie と session cookie はランダム値を HttpOnly/SameSite=Lax で発行し、DBには SHA-256 hash だけを保存します。
 - applicant request は正確な device/session pair に紐付けます。ログアウト、再ログイン、失効、管理権限取消時は未処理申請を `CANCELLED` にします。
 - 状態変更 API は `Origin` が `PUBLIC_BASE_URL` または `ADMIN_FRONTEND_URL` と同一 origin の場合だけ受け付けます（non-browser client は従来どおり Originなしで利用可能）。
@@ -14,6 +15,14 @@
 ## Migration safety
 
 Rails は **別DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgres-data` を使用します。Java/Flyway の `anabuki_event` DB、既存の volume、または本番DBをこのリポジトリで reset/migrate しないでください。実データ移行は承認済みのバックアップ・dry-run・照合計画を含む別作業です。
+
+`users` テーブルを作成したマージ済み migration は変更せず、既存データも削除しません。このテーブルはアプリケーションから使用しません。Google identity への自動変換・メール一致によるアカウント連携は行いません。
+
+## Google OAuth integration
+
+フロントエンドは `GET /api/auth/google/status` で設定状態を確認し、`GET /api/auth/google/start` へブラウザ遷移します。Google のコールバックが成功すると `ADMIN_FRONTEND_URL` へ戻り、`GET /api/admin/auth/session` から認証状態・権限を取得できます。OAuth 未設定時にパスワード認証へフォールバックすることはありません。
+
+**フロントエンドの同時変更が必要です。** 旧 `/users/new` ページ、通常登録フォームとその API client、ホームの登録リンクを撤去し、既存の Google ログイン導線を使用してください。`POST /api/users` と `GET /api/users/:id` はどちらも 404 になります。このリポジトリの変更だけでは別リポジトリのフロントエンドは更新されません。
 
 ## Background jobs (Que)
 
@@ -64,8 +73,6 @@ API: `http://localhost:8080`、health check: `GET /health`。
 
 ```text
 GET  /health
-GET  /api/users/:id
-POST /api/users                       { userName, email, password }
 GET  /api/auth/google/status
 GET  /api/auth/google/start
 GET  /api/auth/google/callback
@@ -85,4 +92,4 @@ Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, a
 
 ## CI
 
-GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec includes API/user/auth coverage and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
+GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers removal of the users API, Google OAuth registration/login and callback rejection (with external Google calls stubbed), origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
