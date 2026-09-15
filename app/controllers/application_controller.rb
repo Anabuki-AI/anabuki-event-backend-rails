@@ -11,6 +11,9 @@ class ApplicationController < ActionController::API
   rescue_from AdminAuthError do |error|
     render_error(error.message, error.status)
   end
+  rescue_from OperatorAuthError do |error|
+    render_error(error.message, error.status)
+  end
 
   private
 
@@ -31,9 +34,9 @@ class ApplicationController < ActionController::API
     render json: { error: message }, status: status
   end
 
-  def require_same_origin!
+  def require_same_origin!(config: admin_auth_config)
     origin = request.headers["Origin"]
-    return if origin.blank? || admin_auth_config.allowed_origin?(origin)
+    return if origin.blank? || config.allowed_origin?(origin)
 
     raise AdminAuthError.new("Origin is not allowed", :forbidden)
   end
@@ -44,5 +47,13 @@ class ApplicationController < ActionController::API
 
   def admin_auth
     @admin_auth ||= AdminAuth.new(cookies:, config: admin_auth_config)
+  end
+
+  def operator_auth_config
+    @operator_auth_config ||= OperatorAuthConfig.new
+  end
+
+  def operator_auth
+    @operator_auth ||= OperatorAuth.new(cookies:, config: operator_auth_config)
   end
 end

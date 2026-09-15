@@ -1,12 +1,11 @@
 require "base64"
-require "digest"
-require "net/http"
-require "securerandom"
-require "uri"
 
 # Implements the device-bound admin approval flow without ever storing a raw
 # cookie or exposing a device/session hash in an API response.
 class AdminAuth
+  include Auth::TokenCrypto
+  include Auth::CookieSession
+  include Auth::GoogleOauthExchange
   DEVICE_COOKIE = "admin_device_id"
   SESSION_COOKIE = "admin_session"
   APPLICANT_SESSION_COOKIE = "admin_applicant_session"
@@ -30,20 +29,10 @@ class AdminAuth
 
   def begin_oauth!
     configured!
-    ensure_device_cookie!
-    state = token
-    AdminOauthState.create!(state_hash: digest(state), expires_at: STATE_TTL.from_now)
+    ensure_device_cookie!(DEVICE_COOKIE, DEVICE_TTL)
+    state = create_oauth_state!(STATE_TTL)
     write_cookie(OAUTH_STATE_COOKIE, state, STATE_TTL)
-    query = URI.encode_www_form(
-      client_id: @config.google_client_id,
-      redirect_uri: @config.google_oauth_callback_url,
-      response_type: "code",
-      scope: "openid email",
-      state:,
-      nonce: state,
-      prompt: "select_account"
-    )
-    "https://accounts.google.com/o/oauth2/v2/auth?#{query}"
+    google_authorization_url(state)
   end
 
   def complete_oauth!(code:, state:)
@@ -51,7 +40,7 @@ class AdminAuth
     raise AdminAuthError.new("OAuth callback is missing code or state", :bad_request) if code.blank? || state.blank?
 
     cookie_state = @cookies[OAUTH_STATE_COOKIE]
-    unless cookie_state.present? && secure_equal?(state, cookie_state) && consume_state!(state)
+    unless cookie_state.present? && secure_equal?(state, cookie_state) && consume_oauth_state!(state)
       raise AdminAuthError.new("OAuth state validation failed", :bad_request)
     end
 
@@ -202,6 +191,10 @@ class AdminAuth
 
   private
 
+  def auth_error = AdminAuthError
+
+  def state_model = AdminOauthState
+
   def read_session(cookie_name)
     device = @cookies[DEVICE_COOKIE]
     key = @cookies[cookie_name]
@@ -225,7 +218,7 @@ class AdminAuth
   end
 
   def upsert_device_session!(identity:, session_key:, source:)
-    device = ensure_device_cookie!
+    device = ensure_device_cookie!(DEVICE_COOKIE, DEVICE_TTL)
     now = Time.current
     AdminDeviceSession.transaction do
       current = AdminDeviceSession.lock.find_by(device_id_hash: digest(device))
@@ -255,25 +248,6 @@ class AdminAuth
     end
   rescue ActiveRecord::RecordNotUnique
     retry
-  end
-
-  def exchange_and_verify!(code, state)
-    response = Net::HTTP.post_form(URI("https://oauth2.googleapis.com/token"), code:, client_id: @config.google_client_id, client_secret: @config.google_client_secret, redirect_uri: @config.google_oauth_callback_url, grant_type: "authorization_code")
-    raise AdminAuthError.new("Google authentication failed", :bad_gateway) unless response.is_a?(Net::HTTPSuccess)
-
-    id_token = JSON.parse(response.body).fetch("id_token")
-    claims = Google::Auth::IDTokens.verify_oidc(id_token, aud: @config.google_client_id)
-    valid = claims["email_verified"] == true || claims["email_verified"] == "true"
-    valid &&= claims["nonce"] == state && claims["email"].present? && claims["sub"].present?
-    raise AdminAuthError.new("Google authentication failed", :bad_gateway) unless valid
-
-    claims
-  rescue JSON::ParserError, KeyError, Google::Auth::IDTokens::VerificationError, SocketError, Timeout::Error, Net::OpenTimeout, Net::ReadTimeout
-    raise AdminAuthError.new("Google authentication failed", :bad_gateway)
-  end
-
-  def consume_state!(state)
-    AdminOauthState.where(state_hash: digest(state)).where("expires_at > ?", Time.current).delete_all == 1
   end
 
   def cancel_invalid_pending_requests!(now = Time.current)
@@ -316,23 +290,6 @@ class AdminAuth
     end
   end
 
-  def ensure_device_cookie!
-    device = @cookies[DEVICE_COOKIE]
-    return device if valid_token?(device)
-
-    device = token
-    write_cookie(DEVICE_COOKIE, device, DEVICE_TTL)
-    device
-  end
-
-  def write_cookie(name, value, ttl)
-    @cookies[name] = cookie_options.merge(value:, expires: ttl.from_now)
-  end
-
-  def cookie_options
-    { httponly: true, same_site: :lax, secure: @config.secure_cookies?, path: "/" }
-  end
-
   def environment_access?(email)
     @config.environment_access_emails.include?(email)
   end
@@ -343,21 +300,5 @@ class AdminAuth
 
   def unauthorized!
     raise AdminAuthError.new("Authentication is required", :unauthorized)
-  end
-
-  def token
-    SecureRandom.urlsafe_base64(32, false)
-  end
-
-  def digest(value)
-    Digest::SHA256.digest(value)
-  end
-
-  def valid_token?(value)
-    value.is_a?(String) && value.match?(/\A[A-Za-z0-9_-]{40,64}\z/)
-  end
-
-  def secure_equal?(left, right)
-    left.is_a?(String) && right.is_a?(String) && left.bytesize == right.bytesize && ActiveSupport::SecurityUtils.secure_compare(left, right)
   end
 end
