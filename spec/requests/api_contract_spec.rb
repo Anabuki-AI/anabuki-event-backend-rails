@@ -8,10 +8,14 @@ RSpec.describe "API contract", type: :request do
     expect(response.parsed_body).to eq("status" => "ok")
   end
 
-  it "does not expose password registration" do
+  it "does not expose legacy password registration or username availability" do
     post "/api/users",
       params: { userName: "Example", email: "example@example.com", password: "secure-password" },
       as: :json
+
+    expect(response).to have_http_status(:not_found)
+
+    get "/api/usernames/available", params: { userName: "Example" }, as: :json
 
     expect(response).to have_http_status(:not_found)
   end
