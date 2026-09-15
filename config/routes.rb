@@ -22,5 +22,12 @@ Rails.application.routes.draw do
 
     get "/operator/auth/session", to: "operator_auth#session"
     post "/operator/auth/logout", to: "operator_auth#logout"
+    post "/operator/auth/exchange", to: "operator_auth#exchange"
+    get "/operator/access-request", to: "operator_access_requests#show"
+    post "/operator/access-request", to: "operator_access_requests#create"
+
+    get "/admin/operator-access-requests", to: "admin_operator_access_requests#index"
+    post "/admin/operator-access-requests/:id/approve", to: "admin_operator_access_requests#approve"
+    post "/admin/operator-access-requests/:id/reject", to: "admin_operator_access_requests#reject"
   end
 end

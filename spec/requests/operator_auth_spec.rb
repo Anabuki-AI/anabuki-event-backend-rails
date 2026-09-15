@@ -154,6 +154,7 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     expect(response.parsed_body).to eq(
       "email" => "manager@example.com",
       "googleSub" => "operator-subject",
+      "accessSource" => "MANAGER",
       "expiresAt" => record.expires_at.iso8601
     )
     expect(response.parsed_body).not_to have_key("deviceIdHash")
@@ -188,18 +189,28 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     expect(Operator::DeviceSession.sole.session_key_hash).to eq(Digest::SHA256.digest(cookies[OperatorAuth::SESSION_COOKIE]))
   end
 
-  it "rejects a Google account outside the operator allowlist with 403" do
+  it "issues a 20-minute applicant session to a Google account outside the operator allowlist" do
     state = start_operator_oauth.fetch("state")
     expect_google_exchange(code: "outsider-code", claims: google_claims(state:, email: "outsider@example.com", sub: "outsider-subject"))
 
     expect {
       complete_operator_oauth(state:, code: "outsider-code")
-    }.not_to change(Operator::Identity, :count)
+    }.to change(Operator::Identity, :count).by(1)
 
-    expect(response).to have_http_status(:forbidden)
-    expect(response.parsed_body).to eq("error" => "Operator access is not allowed for this account")
-    expect(Operator::DeviceSession.count).to eq(0)
-    expect(cookies[OperatorAuth::SESSION_COOKIE]).to be_nil
+    expect(response).to redirect_to(oauth_env.fetch("OPERATOR_FRONTEND_URL"))
+    record = Operator::DeviceSession.sole
+    expect(record).to be_applicant
+    expect(record.expires_at).to be < 21.minutes.from_now
+    expect(cookies[OperatorAuth::APPLICANT_SESSION_COOKIE]).to be_present
+    expect(cookies[OperatorAuth::SESSION_COOKIE]).to be_blank
+
+    get "/api/operator/auth/session"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      "email" => "outsider@example.com",
+      "accessSource" => "APPLICANT"
+    )
   end
 
   it "rejects missing, tampered, mismatched, and expired states before contacting Google" do
