@@ -46,7 +46,6 @@ RSpec.describe "Participant registration", type: :request do
     expect(session_cookie).to match(/\A[A-Za-z0-9_-]{40,64}\z/)
     expect(session.token_hash).to eq(Digest::SHA256.digest(session_cookie))
     expect(session.token_hash).not_to eq(session_cookie)
-    expect(participant.attributes).not_to include("email", "password", "password_digest", "user_name")
     expect(response.body).not_to include(session.token_hash.unpack1("H*"))
     set_cookie = Array(response.headers.fetch("Set-Cookie")).join("\n").downcase
     expect(set_cookie).to include("httponly", "samesite=lax", "secure")

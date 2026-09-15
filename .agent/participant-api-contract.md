@@ -1,6 +1,6 @@
 # 参加者登録 API 契約（PR #17）
 
-このAPIは参加者用の独立した UUID + Cookie セッションです。`AdminAuth` / `OperatorAuth`、Google identity、メールアドレス、パスワードを参加者認証へ流用しません。セッション cookie の生トークンは `participant_session` だけに置き、DBの `participant_sessions.token_hash` には SHA-256 hash だけを保存します。
+このAPIは参加者用の独立したUUID + Cookieセッションです。管理者・運営者の認証とは共有せず、セッションcookieの生トークンは `participant_session` だけに置き、DBの `participant_sessions.token_hash` には SHA-256 hashだけを保存します。
 
 ## API
 
@@ -26,7 +26,7 @@
 }
 ```
 
-成功時（`201 Created`）および `GET /api/participants/me`（`200 OK`）は、以下を返します。`id` は pgcrypto `gen_random_uuid()` で発行する UUID文字列です。`displayName` は表示用であり、一意ではなく、認証識別子ではありません。
+成功時（`201 Created`）および `GET /api/participants/me`（`200 OK`）は、以下を返します。`id` は pgcrypto `gen_random_uuid()` で発行する UUID文字列です。`displayName` は表示用であり、一意ではありません。
 
 ```json
 {
@@ -43,13 +43,3 @@
 ```
 
 `GET /api/participants/me` に有効なcookieが無い、失効済み、またはrevoke済みの場合は `401 {"error":"Participant session is required"}` を返します。`DELETE` は未ログインでも `204 No Content` です。
-
-## Frontend PR #10 との非互換点
-
-Frontend PR #10（`feature/user-registration`）は次の旧契約を呼びますが、本APIは**互換endpointを提供しません**。
-
-- `POST /api/users` に `userName` を送り、数値 `id` と `userName` を期待する。
-- `GET /api/usernames/available` で表示名の一意性を確認する。
-- APIエラー時に登録成功を模倣するモックへfallbackする。
-
-新契約は `/api/participants`、UUID `id`、非一意の `displayName`、Cookieで解決する `/api/participants/me` です。PR #10 はメールアドレスやパスワードを送らない一方、上記のpath・field名・応答型・username availability・モックfallbackが新要件と矛盾します。フロントエンドを変更しない今回の作業ではそのPRを変更していません。接続時にはこのAPI契約へ置換し、ブラウザがAPIをcross-originで直接呼ぶ構成ならcookieを送受信するため `credentials: "include"` も設定してください。

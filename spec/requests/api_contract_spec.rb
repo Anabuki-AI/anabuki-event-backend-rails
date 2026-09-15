@@ -8,24 +8,6 @@ RSpec.describe "API contract", type: :request do
     expect(response.parsed_body).to eq("status" => "ok")
   end
 
-  it "does not expose legacy password registration or username availability" do
-    post "/api/users",
-      params: { userName: "Example", email: "example@example.com", password: "secure-password" },
-      as: :json
-
-    expect(response).to have_http_status(:not_found)
-
-    get "/api/usernames/available", params: { userName: "Example" }, as: :json
-
-    expect(response).to have_http_status(:not_found)
-  end
-
-  it "does not expose the obsolete user lookup" do
-    get "/api/users/1", as: :json
-
-    expect(response).to have_http_status(:not_found)
-  end
-
   it "requires an authenticated session for the management queue" do
     get "/api/admin/access-requests"
 

@@ -6,8 +6,7 @@
 
 - PostgreSQL と Active Record migration
 - 参加者は `POST /api/participants` で UUIDとして登録します。表示名は非一意で、認証識別子ではありません。`participants` と `participant_sessions` は pgcrypto UUIDを使用します。
-- 参加者登録にメールアドレス・パスワードはありません。ランダムな不透明トークンを `HttpOnly; SameSite=Lax` cookieに発行し、DBには SHA-256 hashだけを保存します。これは管理者・運営者認証とは独立した `ParticipantAuth` です。
-- 旧 `/api/users` と `/api/usernames/available` は提供しません。互換用のルートや `User` モデルも残しません。
+- 参加者登録ではランダムな不透明トークンを `HttpOnly; SameSite=Lax` cookieに発行し、DBには SHA-256 hashだけを保存します。これは管理者・運営者認証とは独立した `ParticipantAuth` です。
 - Google OpenID Connect ID token の署名・audience・nonce・確認済みメールを検証してから `AdminIdentity` を作成します。再ログインは同じ Google identity を使用します。
 - 初回ログインは `APPLICANT`（管理権限なし）です。`ADMIN_EMAIL_ALLOWLIST` による環境アクセス、または承認済みの管理アクセスだけが管理画面を利用できます。
 - 管理者の device cookie と session cookie はランダム値を HttpOnly/SameSite=Lax で発行し、DBには SHA-256 hash だけを保存します。
@@ -42,7 +41,7 @@ bundle exec brakeman --no-pager -q
 
 Rails は **別DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgres-data` を使用します。Java/Flyway の `anabuki_event` DB、既存の volume、または本番DBをこのリポジトリで reset/migrate しないでください。実データ移行は承認済みのバックアップ・dry-run・照合計画を含む別作業です。
 
-`users` テーブルを作成したマージ済み migration は変更せず、既存データも削除しません。このテーブルはアプリケーションから使用しません。Google identity への自動変換・メール一致によるアカウント連携は行いません。
+このリポジトリで管理する未マージの初期migrationには、参加者用の認証情報テーブルを含めません。Google identityへの自動変換・メール一致によるアカウント連携は行いません。
 
 ## Google OAuth integration
 
@@ -50,9 +49,7 @@ Rails は **別DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgr
 
 ## Participant registration
 
-参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。完全なrequest/response契約と、Frontend PR #10との意図的な非互換点は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
-
-`POST /api/users`、`GET /api/users/:id`、`GET /api/usernames/available` はすべて404です。このリポジトリの変更だけでは別リポジトリのフロントエンドは更新されません。
+参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。完全なrequest/response契約は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
 
 ## Background jobs (Que)
 
@@ -126,4 +123,4 @@ Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `
 
 ## CI
 
-GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers UUID participant registration, hashed Cookie sessions and their revocation, removal of the users/username-availability APIs, Google OAuth registration/login and callback rejection (with external Google calls stubbed), Pundit authorization and admin access revocation, origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
+GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers UUID participant registration, hashed Cookie sessions and their revocation, Google OAuth registration/login and callback rejection (with external Google calls stubbed), Pundit authorization and admin access revocation, origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
