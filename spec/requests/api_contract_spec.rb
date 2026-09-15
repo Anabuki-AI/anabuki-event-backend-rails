@@ -8,12 +8,13 @@ RSpec.describe "API contract", type: :request do
     expect(response.parsed_body).to eq("status" => "ok")
   end
 
-  it "does not expose password registration" do
+  it "does not expose the retired password registration fields" do
     post "/api/users",
       params: { userName: "Example", email: "example@example.com", password: "secure-password" },
       as: :json
 
-    expect(response).to have_http_status(:not_found)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body).to eq("error" => "利用規約への同意が必要です")
   end
 
   it "does not expose the obsolete user lookup" do

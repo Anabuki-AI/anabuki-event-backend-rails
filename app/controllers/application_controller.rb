@@ -8,6 +8,9 @@ class ApplicationController < ActionController::API
   rescue_from ActiveRecord::RecordInvalid do |error|
     render_error(error.record.errors.full_messages.to_sentence, :unprocessable_content)
   end
+  rescue_from ActionDispatch::Http::Parameters::ParseError do
+    render_error("Invalid request", :bad_request)
+  end
   rescue_from AdminAuthError do |error|
     render_error(error.message, error.status)
   end

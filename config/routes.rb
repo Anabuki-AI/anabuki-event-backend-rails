@@ -2,6 +2,8 @@ Rails.application.routes.draw do
   get "/health", to: "health#show"
 
   scope "/api" do
+    post "/users", to: "participant_users#create"
+
     get "/auth/google/status", to: "google_auth#status"
     get "/auth/google/start", to: "google_auth#start"
     get "/auth/google/callback", to: "google_auth#callback"
