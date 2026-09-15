@@ -2,8 +2,11 @@ x-rails-environment: &rails-environment
   RAILS_ENV: development
   RAILS_MAX_THREADS: ${RAILS_MAX_THREADS:-5}
   DATABASE_URL: postgresql://${POSTGRES_USER:-anabuki}:${POSTGRES_PASSWORD:-anabuki}@postgres:5432/anabuki_event_rails_development
+  OPERATOR_DATABASE_URL: postgresql://${POSTGRES_USER:-anabuki}:${POSTGRES_PASSWORD:-anabuki}@postgres:5432/anabuki_event_operator_development
   PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
   ADMIN_FRONTEND_URL: ${ADMIN_FRONTEND_URL:-http://localhost:3000/admin}
+  OPERATOR_FRONTEND_URL: ${OPERATOR_FRONTEND_URL:-http://localhost:3000/operator}
+  OPERATOR_EMAIL_ALLOWLIST: ${OPERATOR_EMAIL_ALLOWLIST:-}
   GOOGLE_OAUTH_CALLBACK_URL: ${GOOGLE_OAUTH_CALLBACK_URL:-http://localhost:8080/api/auth/google/callback}
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
