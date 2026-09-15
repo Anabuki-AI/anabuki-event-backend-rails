@@ -23,6 +23,8 @@ Pundit は**判定だけ**を担当します。Google OAuth の認証、device-b
 | `MANAGEMENT_ACCESS` | 不可 | 不可 | 可 | 可 | 他者の `MANAGEMENT_ACCESS` のみ可 |
 | `ENVIRONMENT_ACCESS` | 不可 | 不可 | 可 | 可 | 他者の `MANAGEMENT_ACCESS` のみ可 |
 
+管理者のみの `GET /api/admin/api-status` も `MANAGEMENT_PAGE_VIEW` で保護されます。Statuspage と Datadog の集約値は、外部設定が無い場合に正常と見なさない `unconfigured` 状態を返します。契約とプロバイダ設定は [`.agent/admin-api-status.md`](.agent/admin-api-status.md) を参照してください。
+
 `ADMIN_EMAIL_ALLOWLIST` にあるメールアドレスは、申請・承認なしで最初の `ENVIRONMENT_ACCESS` を取得できる初期管理者例外です。この環境アクセスは各認証リクエストで再評価されます。`MANAGEMENT_ACCESS` と `ENVIRONMENT_ACCESS` はどちらも他者の通常管理権限を取消できますが、自分自身および `ENVIRONMENT_ACCESS` は取消できません。
 
 認可を含む確認コマンド:
@@ -99,6 +101,7 @@ GET  /api/auth/google/status
 GET  /api/auth/google/start
 GET  /api/auth/google/callback
 GET  /api/admin/auth/session
+GET  /api/admin/api-status
 POST /api/admin/auth/logout
 POST /api/admin/auth/exchange
 GET/POST /api/admin/access-request
@@ -110,7 +113,7 @@ GET/DELETE /api/admin/allowed-emails(/:id)
 
 ## Configuration
 
-Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, and `SECRET_KEY_BASE` must come from a local/deployment secret store. `SECRET_KEY_BASE` is mandatory in production (`bin/rails secret` generates one). Register `GOOGLE_OAUTH_CALLBACK_URL` exactly in Google Cloud Console. Set HTTPS public URLs in production so cookies get the `Secure` flag.
+Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `SECRET_KEY_BASE`, `STATUSPAGE_API_KEY`, `DATADOG_API_KEY`, and `DATADOG_APP_KEY` must come from a local/deployment secret store. `SECRET_KEY_BASE` is mandatory in production (`bin/rails secret` generates one). Register `GOOGLE_OAUTH_CALLBACK_URL` exactly in Google Cloud Console. Set HTTPS public URLs in production so cookies get the `Secure` flag. Statuspage/Datadog environment setup and the admin status response contract are documented in [`.agent/admin-api-status.md`](.agent/admin-api-status.md).
 
 ## CI
 

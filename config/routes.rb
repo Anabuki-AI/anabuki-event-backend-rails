@@ -7,6 +7,7 @@ Rails.application.routes.draw do
     get "/auth/google/callback", to: "google_auth#callback"
 
     get "/admin/auth/session", to: "admin_auth#session"
+    get "/admin/api-status", to: "admin_api_status#show"
     post "/admin/auth/logout", to: "admin_auth#logout"
     post "/admin/auth/exchange", to: "admin_auth#exchange"
     get "/admin/access-request", to: "access_requests#show"
