@@ -102,6 +102,7 @@ API: `http://localhost:8080`、health check: `GET /health`。
 GET  /health
 POST /api/participants
 GET  /api/participants/me
+POST /api/participants/presence
 DELETE /api/participants/session
 GET  /api/auth/google/status
 GET  /api/auth/google/start
