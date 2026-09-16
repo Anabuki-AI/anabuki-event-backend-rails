@@ -1,5 +1,5 @@
 class Operator::Identity < Operator::ApplicationRecord
-  has_many :operator_device_sessions, class_name: "Operator::DeviceSession", dependent: :destroy
+  has_many :operator_device_sessions, class_name: "Operator::DeviceSession", foreign_key: :operator_identity_id, dependent: :destroy
 
   validates :email, presence: true, length: { maximum: 320 }, format: { with: URI::MailTo::EMAIL_REGEXP }, uniqueness: { case_sensitive: false }
   validates :google_sub, presence: true, length: { maximum: 255 }, uniqueness: true

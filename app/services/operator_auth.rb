@@ -1,10 +1,9 @@
 require "uri"
 
 # Device-bound session flow for event operators. Identity and session data
-# live in the dedicated operator database. Allowlisted emails (or identities
-# promoted by an admin) sign in directly as MANAGER; anyone else becomes an
-# APPLICANT who can file an access request that an admin approves from the
-# admin portal, mirroring the AdminAuth flow.
+# live in the dedicated operator database. Operator access is granted directly
+# by an administrator to a Google-authenticated identity; allowlisted emails
+# remain an optional environment-level source of access.
 class OperatorAuth
   include Auth::TokenCrypto
   include Auth::CookieSession
@@ -21,6 +20,7 @@ class OperatorAuth
 
   Session = Data.define(:record, :identity, :source) do
     def applicant? = source == "APPLICANT"
+    def manager? = source == "MANAGER"
   end
 
   def initialize(cookies:, config: OperatorAuthConfig.new)
@@ -68,12 +68,54 @@ class OperatorAuth
     session
   end
 
+  def manager_session!
+    session = any_session!
+    raise auth_error.new("Operator management access is required", :forbidden) unless session.manager?
+
+    session
+  end
+
   def logout!
     device = @cookies[DEVICE_COOKIE]
     [ SESSION_COOKIE, APPLICANT_SESSION_COOKIE ].each do |name|
       key = @cookies[name]
       revoke_session!(device, key, "APPLICANT_LOGGED_OUT") if device.present? && key.present?
       @cookies.delete(name, cookie_options)
+    end
+  end
+
+  # Only identities created by a completed operator Google login are listed.
+  # No email-address entry point exists, preventing grants to unverified users.
+  def management_identities!
+    Operator::Identity.order(:email).map { |identity| management_identity_json(identity) }
+  end
+
+  def management_identity_json(identity)
+    {
+      id: identity.id,
+      email: identity.email,
+      active: manager_access?(identity),
+      managerEnabled: identity.manager_enabled?,
+      source: @config.operator_email_allowlist.include?(identity.email) ? "ENVIRONMENT_ACCESS" : "MANAGEMENT_ACCESS"
+    }
+  end
+
+  def set_management_access!(id:, manager_enabled:, actor:)
+    Operator::Identity.transaction do
+      identity = Operator::Identity.lock.find(id)
+      now = Time.current
+      identity.update!(
+        manager_enabled:,
+        granted_by: manager_enabled ? actor.identity.id : nil,
+        granted_at: manager_enabled ? now : nil,
+        revoked_at: manager_enabled ? nil : now
+      )
+      # Removing a direct grant immediately terminates active sessions unless
+      # the identity is independently enabled by the environment allowlist.
+      unless manager_access?(identity)
+        identity.operator_device_sessions.where(revoked_at: nil).update_all(revoked_at: now, updated_at: now)
+      end
+      identity
     end
   end
 
@@ -104,38 +146,6 @@ class OperatorAuth
         applicant_device_id_hash: digest(device),
         applicant_session_key_hash: digest(key)
       )
-    end
-  end
-
-  # The actor is an already-authorized AdminAuth management session; permission
-  # checks happen in the controller via OperatorAccessRequestPolicy.
-  def pending_access_requests!
-    cancel_invalid_pending_requests!
-    Operator::AccessRequest.pending.where("expires_at > ?", Time.current).order(:created_at).to_a
-  end
-
-  def decide_access_request!(id:, approved:, actor:)
-    Operator::AccessRequest.transaction do
-      cancel_invalid_pending_requests!
-      request = Operator::AccessRequest.lock.find(id)
-      raise auth_error.new("The access request is no longer pending", :conflict) unless request.pending?
-
-      session = Operator::DeviceSession.lock.find_by(id: request.applicant_session_id)
-      unless valid_binding?(request, session)
-        cancel_request!(request, session&.expires_at && session.expires_at <= Time.current ? "APPLICANT_SESSION_EXPIRED" : "APPLICANT_SESSION_REVOKED")
-        raise auth_error.new("The access request is no longer pending", :conflict)
-      end
-
-      if approved
-        identity = Operator::Identity.lock.find_by(google_sub: request.google_sub)
-        raise auth_error.new("The applicant Google identity could not be verified", :conflict) unless identity&.email == request.email
-
-        identity.update!(manager_enabled: true, granted_by: actor.identity.id, granted_at: Time.current, revoked_at: nil)
-        request.update!(status: "APPROVED", approved_by_email: actor.identity.email, approved_by_google_sub: actor.identity.google_sub, approved_by_identity_id: actor.identity.id, approved_at: Time.current)
-      else
-        request.update!(status: "REJECTED", rejected_by_email: actor.identity.email, rejected_by_google_sub: actor.identity.google_sub, rejected_by_identity_id: actor.identity.id, rejected_at: Time.current)
-      end
-      request
     end
   end
 
@@ -175,7 +185,10 @@ class OperatorAuth
     identity = record.operator_identity
     return unless identity && identity.email == record.email && identity.google_sub == record.google_sub
 
-    Session.new(record, identity, record.manager? ? "MANAGER" : "APPLICANT")
+    # A direct grant takes effect for a current applicant cookie as well. The
+    # next Google login creates the normal eight-hour manager session; this
+    # avoids making a newly granted operator sign in again before starting work.
+    Session.new(record, identity, manager_access?(identity) ? "MANAGER" : "APPLICANT")
   end
 
   def manager_access?(identity)

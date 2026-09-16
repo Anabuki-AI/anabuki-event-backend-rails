@@ -14,12 +14,12 @@ class AdminQuestionsController < ApplicationController
   }.freeze
 
   def index
-    authorize_admin!(Question, :index?)
+    authorize_event_operator!
     render json: Question.order(:position).map { |question| question_json(question) }
   end
 
   def show
-    authorize_admin!(Question, :show?)
+    authorize_event_operator!
     render json: question_json(Question.find(params[:id]))
   end
 
@@ -33,7 +33,7 @@ class AdminQuestionsController < ApplicationController
 
   def create
     require_same_origin!
-    authorize_admin!(Question, :create?)
+    authorize_event_operator!
     return if render_question_parameter_type_errors
 
     question = Question.new(question_attributes)
@@ -53,7 +53,7 @@ class AdminQuestionsController < ApplicationController
 
   def update
     require_same_origin!
-    authorize_admin!(Question, :update?)
+    authorize_event_operator!
     question = Question.find(params[:id])
     return if render_question_parameter_type_errors
 
@@ -67,7 +67,7 @@ class AdminQuestionsController < ApplicationController
 
   def destroy
     require_same_origin!
-    authorize_admin!(Question, :destroy?)
+    authorize_event_operator!
     Question.find(params[:id]).destroy!
     head :no_content
   end
