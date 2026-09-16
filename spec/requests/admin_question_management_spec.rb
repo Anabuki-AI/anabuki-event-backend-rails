@@ -93,7 +93,7 @@ RSpec.describe "Admin question management", type: :request do
 
     put "/api/admin/questions/#{question.id}", params: question_payload(
       question_text: { nested: "object" },
-      choice_a: ["array"],
+      choice_a: [ "array" ],
       choice_b: 123,
       choice_c: true,
       choice_d: false,
