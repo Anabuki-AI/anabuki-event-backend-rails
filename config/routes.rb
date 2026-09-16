@@ -4,6 +4,7 @@ Rails.application.routes.draw do
   scope "/api" do
     post "/participants", to: "participants#create"
     get "/participants/me", to: "participants#me"
+    post "/participants/presence", to: "participants#presence"
     delete "/participants/session", to: "participants#destroy_session"
 
     get "/auth/google/status", to: "google_auth#status"

@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | `POST` | `/api/participants` | UUID参加者を作成し、セッションcookieを発行する |
 | `GET` | `/api/participants/me` | cookieから現在の参加者を返す |
+| `POST` | `/api/participants/presence` | 現在のセッションの待機heartbeatを記録し、待機中の参加者数だけを返す |
 | `DELETE` | `/api/participants/session` | 現cookieに対応するセッションをrevokeし、cookieを削除する |
 
 `POST /api/participants` のJSON body:
@@ -43,3 +44,17 @@
 ```
 
 `GET /api/participants/me` に有効なcookieが無い、失効済み、またはrevoke済みの場合は `401 {"error":"Participant session is required"}` を返します。`DELETE` は未ログインでも `204 No Content` です。
+
+## 待機人数 presence
+
+`POST /api/participants/presence` は有効な参加者cookieを必要とし、現在の `participant_sessions.waiting_heartbeat_at` をサーバー時刻で更新します。revoke済み・失効済みを除き、観測時刻から75秒以内にheartbeatを送ったセッションを `participant_id` ごとに重複排除して数えます。レスポンスは個人情報・参加者ID・セッション情報を含まず、常に `Cache-Control: no-store` です。`observedAt` は UTC の ISO 8601 表記（末尾 `Z`）で返します。
+
+```json
+{
+  "activeParticipantCount": 42,
+  "observedAt": "2026-09-30T12:00:00Z",
+  "activeWindowSeconds": 75
+}
+```
+
+無効・未ログインのcookieは `401 {"error":"Participant session is required"}`、許可されない `Origin` は `403 {"error":"Origin is not allowed"}` を返します。

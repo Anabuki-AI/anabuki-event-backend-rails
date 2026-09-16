@@ -20,6 +20,21 @@ class ParticipantsController < ApplicationController
     render json: participant_json(session.participant, session.expires_at)
   end
 
+  def presence
+    require_participant_same_origin!
+
+    observed_at = Time.current
+    session = participant_auth.current_session!
+    session.update!(waiting_heartbeat_at: observed_at)
+
+    response.headers["Cache-Control"] = "no-store"
+    render json: {
+      activeParticipantCount: ParticipantSession.active_participant_count(observed_at:),
+      observedAt: observed_at.utc.iso8601,
+      activeWindowSeconds: ParticipantSession::WAITING_ACTIVE_WINDOW_SECONDS
+    }
+  end
+
   def destroy_session
     require_participant_same_origin!
     participant_auth.logout!
