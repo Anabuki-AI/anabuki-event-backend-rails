@@ -6,6 +6,8 @@ Rails.application.routes.draw do
     get "/participants/me", to: "participants#me"
     post "/participants/presence", to: "participants#presence"
     delete "/participants/session", to: "participants#destroy_session"
+    get "/participant/quiz/state", to: "participant_quiz#state"
+    post "/participant/quiz/answers", to: "participant_quiz#create_answer"
 
     get "/auth/google/status", to: "google_auth#status"
     get "/auth/google/start", to: "google_auth#start"
@@ -38,6 +40,11 @@ Rails.application.routes.draw do
     get "/operator/auth/session", to: "operator_auth#session"
     post "/operator/auth/logout", to: "operator_auth#logout"
     post "/operator/auth/exchange", to: "operator_auth#exchange"
+    get "/operator/quiz/state", to: "operator_quiz#state"
+    post "/operator/quiz/start", to: "operator_quiz#start"
+    post "/operator/quiz/publish", to: "operator_quiz#publish"
+    post "/operator/quiz/close", to: "operator_quiz#close"
+    post "/operator/quiz/reveal", to: "operator_quiz#reveal"
     get "/operator/access-request", to: "operator_access_requests#show"
     post "/operator/access-request", to: "operator_access_requests#create"
 

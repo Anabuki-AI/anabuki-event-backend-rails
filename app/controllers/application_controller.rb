@@ -17,6 +17,9 @@ class ApplicationController < ActionController::API
   rescue_from ParticipantAuthError do |error|
     render_error(error.message, error.status)
   end
+  rescue_from QuizEventTransitionError do |error|
+    render_error(error.message, error.status)
+  end
 
   private
 
