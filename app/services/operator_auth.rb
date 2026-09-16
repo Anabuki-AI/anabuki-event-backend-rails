@@ -61,13 +61,6 @@ class OperatorAuth
     read_session(SESSION_COOKIE) || read_session(APPLICANT_SESSION_COOKIE) || unauthorized!
   end
 
-  def applicant_session!
-    session = read_session(APPLICANT_SESSION_COOKIE) || unauthorized!
-    raise auth_error.new("Applicant access is required", :forbidden) unless session.applicant?
-
-    session
-  end
-
   def manager_session!
     session = any_session!
     raise auth_error.new("Operator management access is required", :forbidden) unless session.manager?
@@ -79,7 +72,7 @@ class OperatorAuth
     device = @cookies[DEVICE_COOKIE]
     [ SESSION_COOKIE, APPLICANT_SESSION_COOKIE ].each do |name|
       key = @cookies[name]
-      revoke_session!(device, key, "APPLICANT_LOGGED_OUT") if device.present? && key.present?
+      revoke_session!(device, key) if device.present? && key.present?
       @cookies.delete(name, cookie_options)
     end
   end
@@ -103,67 +96,18 @@ class OperatorAuth
   def set_management_access!(id:, manager_enabled:, actor:)
     Operator::Identity.transaction do
       identity = Operator::Identity.lock.find(id)
+      raise auth_error.new("Operator access is controlled by the environment allowlist", :bad_request) if @config.operator_email_allowlist.include?(identity.email)
+
       now = Time.current
-      identity.update!(
-        manager_enabled:,
-        granted_by: manager_enabled ? actor.identity.id : nil,
-        granted_at: manager_enabled ? now : nil,
-        revoked_at: manager_enabled ? nil : now
-      )
-      # Removing a direct grant immediately terminates active sessions unless
-      # the identity is independently enabled by the environment allowlist.
-      unless manager_access?(identity)
-        identity.operator_device_sessions.where(revoked_at: nil).update_all(revoked_at: now, updated_at: now)
-      end
+      attributes = { manager_enabled:, revoked_at: manager_enabled ? nil : now }
+      # Keep the original granting actor and timestamp after revocation, matching
+      # the administrator access audit trail. A new direct grant records its own
+      # actor and timestamp.
+      attributes.merge!(granted_by: actor.identity.id, granted_at: now) if manager_enabled
+      identity.update!(attributes)
+      identity.operator_device_sessions.where(revoked_at: nil).update_all(revoked_at: now, updated_at: now) unless manager_access?(identity)
       identity
     end
-  end
-
-  def own_access_request!
-    device, key = applicant_cookie_pair!
-    cancel_invalid_pending_requests!
-    request = Operator::AccessRequest.where(applicant_device_id_hash: digest(device), applicant_session_key_hash: digest(key)).order(id: :desc).first
-    return request if request
-
-    applicant_session!
-    nil
-  end
-
-  def create_access_request!
-    session = applicant_session!
-    device, key = applicant_cookie_pair!
-    now = Time.current
-    Operator::AccessRequest.transaction do
-      cancel_invalid_pending_requests!(now)
-      record = Operator::DeviceSession.lock.find_by(id: session.record.id, device_id_hash: digest(device), session_key_hash: digest(key), access_source: "APPLICANT", revoked_at: nil)
-      unauthorized! unless record&.expires_at&.>(now)
-      Operator::AccessRequest.pending.lock.where(applicant_session_id: record.id).first || Operator::AccessRequest.create!(
-        email: session.identity.email,
-        google_sub: session.identity.google_sub,
-        status: "PENDING",
-        expires_at: record.expires_at,
-        applicant_session: record,
-        applicant_device_id_hash: digest(device),
-        applicant_session_key_hash: digest(key)
-      )
-    end
-  end
-
-  def exchange_applicant_session!
-    session = applicant_session!
-    device, old_key = applicant_cookie_pair!
-    next_key = token
-    Operator::DeviceSession.transaction do
-      record = Operator::DeviceSession.lock.find_by(id: session.record.id, device_id_hash: digest(device), session_key_hash: digest(old_key), access_source: "APPLICANT", revoked_at: nil)
-      approved = record && Operator::AccessRequest.approved.where(applicant_session_id: record.id, applicant_device_id_hash: digest(device), applicant_session_key_hash: digest(old_key), google_sub: session.identity.google_sub).exists?
-      unless record&.expires_at&.>(Time.current) && approved && session.identity.manager_enabled?
-        raise auth_error.new("The approved applicant session cannot be exchanged", :forbidden)
-      end
-
-      record.update!(session_key_hash: digest(next_key), access_source: "MANAGER", expires_at: SESSION_TTL.from_now, last_seen_at: Time.current)
-    end
-    write_cookie(SESSION_COOKIE, next_key, SESSION_TTL)
-    @cookies.delete(APPLICANT_SESSION_COOKIE, cookie_options)
   end
 
   private
@@ -200,9 +144,6 @@ class OperatorAuth
     now = Time.current
     Operator::DeviceSession.transaction do
       current = Operator::DeviceSession.lock.find_by(device_id_hash: digest(device))
-      if current&.applicant? && (current.session_key_hash != digest(session_key) || source != "APPLICANT")
-        cancel_requests_for_sessions!(Operator::DeviceSession.where(id: current.id), "APPLICANT_SESSION_REVOKED", now)
-      end
       current ||= Operator::DeviceSession.new(device_id_hash: digest(device))
       current.update!(operator_identity: identity, session_key_hash: digest(session_key), email: identity.email, google_sub: identity.google_sub, access_source: source, expires_at: (source == "APPLICANT" ? APPLICANT_TTL : SESSION_TTL).from_now, last_seen_at: now, revoked_at: nil)
       current
@@ -228,44 +169,9 @@ class OperatorAuth
     retry
   end
 
-  def cancel_invalid_pending_requests!(now = Time.current)
-    Operator::AccessRequest.pending.includes(:applicant_session).find_each do |request|
-      session = request.applicant_session
-      next if valid_binding?(request, session, now)
-
-      cancel_request!(request, session&.expires_at && session.expires_at <= now ? "APPLICANT_SESSION_EXPIRED" : "APPLICANT_SESSION_REVOKED", now)
-    end
-  end
-
-  def cancel_requests_for_sessions!(sessions, reason, now)
-    Operator::AccessRequest.pending.where(applicant_session_id: sessions.select(:id)).update_all(status: "CANCELLED", cancelled_at: now, cancellation_reason: reason, updated_at: now)
-  end
-
-  def cancel_request!(request, reason, now = Time.current)
-    request.update!(status: "CANCELLED", cancelled_at: now, cancellation_reason: reason)
-  end
-
-  def valid_binding?(request, session, now = Time.current)
-    session && session.applicant? && session.revoked_at.nil? && request.expires_at > now && session.expires_at > now &&
-      secure_equal?(request.applicant_device_id_hash, session.device_id_hash) && secure_equal?(request.applicant_session_key_hash, session.session_key_hash) &&
-      request.email == session.email && request.google_sub == session.google_sub
-  end
-
-  def applicant_cookie_pair!
-    device = @cookies[DEVICE_COOKIE]
-    key = @cookies[APPLICANT_SESSION_COOKIE]
-    unauthorized! if device.blank? || key.blank?
-    [ device, key ]
-  end
-
-  def revoke_session!(device, key, reason)
+  def revoke_session!(device, key)
     record = Operator::DeviceSession.lock.find_by(device_id_hash: digest(device), session_key_hash: digest(key))
-    return unless record
-
-    Operator::DeviceSession.transaction do
-      cancel_requests_for_sessions!(Operator::DeviceSession.where(id: record.id), reason, Time.current) if record.applicant?
-      record.update!(revoked_at: Time.current)
-    end
+    record&.update!(revoked_at: Time.current)
   end
 
   def configured!

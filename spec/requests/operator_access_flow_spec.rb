@@ -10,7 +10,6 @@ RSpec.describe "Operator management access", type: :request do
 
   # Operator tables use their own database and therefore need explicit cleanup.
   before do
-    Operator::AccessRequest.delete_all
     Operator::DeviceSession.delete_all
     Operator::OauthState.delete_all
     Operator::Identity.delete_all
@@ -36,7 +35,9 @@ RSpec.describe "Operator management access", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include("id" => operator.identity.id, "active" => true, "managerEnabled" => true)
-    expect(operator.identity.reload).to have_attributes(manager_enabled: true, granted_by: admin.id, revoked_at: nil)
+    granted_identity = operator.identity.reload
+    expect(granted_identity).to have_attributes(manager_enabled: true, granted_by: admin.id, revoked_at: nil)
+    expect(granted_identity.granted_at).to be_present
 
     # An existing applicant cookie becomes usable immediately; a second OAuth
     # session is not required after an administrator grants the identity.
@@ -49,7 +50,11 @@ RSpec.describe "Operator management access", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include("active" => false, "managerEnabled" => false)
-    expect(operator.identity.reload).to have_attributes(manager_enabled: false, granted_by: nil)
+    expect(operator.identity.reload).to have_attributes(
+      manager_enabled: false,
+      granted_by: admin.id,
+      granted_at: granted_identity.granted_at
+    )
     expect(operator.session.reload.revoked_at).to be_present
 
     get "/api/operator/auth/session"
@@ -86,6 +91,20 @@ RSpec.describe "Operator management access", type: :request do
 
     expect(response).to have_http_status(:forbidden)
     expect(identity.reload).not_to be_manager_enabled
+  end
+
+  it "rejects PATCH changes to an identity controlled by the environment allowlist" do
+    authenticate_admin
+    identity = Operator::Identity.create!(email: "allowlisted@example.com", google_sub: "allowlisted-subject", manager_enabled: true)
+
+    with_env("OPERATOR_EMAIL_ALLOWLIST" => identity.email) do
+      patch "/api/admin/operator-identities/#{identity.id}", params: { managerEnabled: false }, as: :json,
+        headers: { "Origin" => "http://localhost:3000" }
+    end
+
+    expect(response).to have_http_status(:bad_request)
+    expect(response.parsed_body).to eq("error" => "Operator access is controlled by the environment allowlist")
+    expect(identity.reload).to be_manager_enabled
   end
 
   private

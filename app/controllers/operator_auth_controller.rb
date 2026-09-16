@@ -10,11 +10,6 @@ class OperatorAuthController < ApplicationController
     head :no_content
   end
 
-  def exchange
-    require_same_origin!(config: operator_auth_config)
-    operator_auth.exchange_applicant_session!
-    head :no_content
-  end
 
   private
 
