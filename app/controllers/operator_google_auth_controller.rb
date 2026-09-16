@@ -1,4 +1,8 @@
 class OperatorGoogleAuthController < ApplicationController
+  def status
+    render json: { configured: operator_auth.oauth_configured? }
+  end
+
   def start
     redirect_to operator_auth.begin_oauth!, allow_other_host: true
   end

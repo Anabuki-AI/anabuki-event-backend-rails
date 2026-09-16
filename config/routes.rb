@@ -29,6 +29,7 @@ Rails.application.routes.draw do
     get "/admin/allowed-emails", to: "management_accesses#index"
     delete "/admin/allowed-emails/:id", to: "management_accesses#destroy"
 
+    get "/auth/operator/google/status", to: "operator_google_auth#status"
     get "/auth/operator/google/start", to: "operator_google_auth#start"
     get "/auth/operator/google/callback", to: "operator_google_auth#callback"
 

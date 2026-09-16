@@ -45,7 +45,7 @@ Rails は **別DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgr
 
 ## Google OAuth integration
 
-フロントエンドは `GET /api/auth/google/status` で設定状態を確認し、`GET /api/auth/google/start` へブラウザ遷移します。Google のコールバックが成功すると `ADMIN_FRONTEND_URL` へ戻り、`GET /api/admin/auth/session` から認証状態・権限を取得できます。OAuth 未設定時にパスワード認証へフォールバックすることはありません。
+管理者フロントエンドは `GET /api/auth/google/status`、オペレーターフロントエンドは `GET /api/auth/operator/google/status` でそれぞれの設定状態を確認します。ログイン開始も管理者は `GET /api/auth/google/start`、オペレーターは `GET /api/auth/operator/google/start` に分離されています。Google のコールバックが成功すると、管理者は `ADMIN_FRONTEND_URL`、オペレーターは `OPERATOR_FRONTEND_URL` へ戻ります。オペレーター用の `OPERATOR_GOOGLE_OAUTH_CALLBACK_URL` は Google Cloud Console に完全一致で登録してください。OAuth 未設定時にパスワード認証へフォールバックすることはありません。
 
 ## Participant registration
 
@@ -106,6 +106,9 @@ DELETE /api/participants/session
 GET  /api/auth/google/status
 GET  /api/auth/google/start
 GET  /api/auth/google/callback
+GET  /api/auth/operator/google/status
+GET  /api/auth/operator/google/start
+GET  /api/auth/operator/google/callback
 GET  /api/admin/auth/session
 GET  /api/admin/api-status
 POST /api/admin/auth/logout
@@ -132,7 +135,7 @@ PATCH /api/admin/confidence-multipliers/:level
 
 ## Configuration
 
-Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `SECRET_KEY_BASE`, `STATUSPAGE_API_KEY`, `DATADOG_API_KEY`, and `DATADOG_APP_KEY` must come from a local/deployment secret store. `SECRET_KEY_BASE` is mandatory in production (`bin/rails secret` generates one). Register `GOOGLE_OAUTH_CALLBACK_URL` exactly in Google Cloud Console. Set HTTPS public URLs in production so cookies get the `Secure` flag. Statuspage/Datadog environment setup and the admin status response contract are documented in [`.agent/admin-api-status.md`](.agent/admin-api-status.md).
+Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `SECRET_KEY_BASE`, `STATUSPAGE_API_KEY`, `DATADOG_API_KEY`, and `DATADOG_APP_KEY` must come from a local/deployment secret store. `SECRET_KEY_BASE` is mandatory in production (`bin/rails secret` generates one). Register both `GOOGLE_OAUTH_CALLBACK_URL` and `OPERATOR_GOOGLE_OAUTH_CALLBACK_URL` exactly in Google Cloud Console, and keep `OPERATOR_FRONTEND_URL` pointed at the operator portal rather than the admin portal. Set HTTPS public URLs in production so cookies get the `Secure` flag. Statuspage/Datadog environment setup and the admin status response contract are documented in [`.agent/admin-api-status.md`](.agent/admin-api-status.md).
 
 ## CI
 
