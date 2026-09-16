@@ -15,6 +15,7 @@ Rails.application.routes.draw do
     get "/admin/questions", to: "admin_questions#index"
     post "/admin/questions", to: "admin_questions#create"
     get "/admin/questions/:id", to: "admin_questions#show"
+    get "/admin/questions/:id/image", to: "admin_questions#image"
     put "/admin/questions/:id", to: "admin_questions#update"
     delete "/admin/questions/:id", to: "admin_questions#destroy"
     get "/admin/confidence-multipliers", to: "admin_confidence_multipliers#index"

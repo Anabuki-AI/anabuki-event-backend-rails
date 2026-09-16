@@ -7,6 +7,9 @@ class AdminQuestionsController < ApplicationController
     choice_d: "choiceD",
     correct_answer: "correctAnswer",
     image_url: "imageUrl",
+    image: "image",
+    explanation: "explanation",
+    target_audience: "targetAudience",
     position: "position"
   }.freeze
 
@@ -20,12 +23,21 @@ class AdminQuestionsController < ApplicationController
     render json: question_json(Question.find(params[:id]))
   end
 
+  def image
+    authorize_admin!(Question, :show?)
+    question = Question.find(params[:id])
+    return head :not_found unless question.image.attached?
+
+    send_data question.image.download, type: question.image.content_type, disposition: "inline"
+  end
+
   def create
     require_same_origin!
     authorize_admin!(Question, :create?)
     return if render_question_parameter_type_errors
 
     question = Question.new(question_attributes)
+    assign_image(question)
 
     Question.transaction do
       Question.with_position_lock do
@@ -45,7 +57,9 @@ class AdminQuestionsController < ApplicationController
     question = Question.find(params[:id])
     return if render_question_parameter_type_errors
 
-    question.update!(question_attributes)
+    question.assign_attributes(question_attributes)
+    assign_image(question)
+    question.save!
     render json: question_json(question)
   rescue ActiveRecord::RecordInvalid => error
     render_question_validation_error(error.record)
@@ -60,6 +74,14 @@ class AdminQuestionsController < ApplicationController
 
   private
 
+  def assign_image(question)
+    if params[:image].present?
+      question.image.attach(params[:image])
+    elsif params[:removeImage].to_s == "true" && question.persisted? && question.image.attached?
+      question.image.purge
+    end
+  end
+
   def question_attributes
     attributes = {
       question_text: parameter_value(:questionText, :question_text),
@@ -70,6 +92,8 @@ class AdminQuestionsController < ApplicationController
       correct_answer: parameter_value(:correctAnswer, :correct_answer, :correctChoice, :correct_choice)
     }
     attributes[:image_url] = parameter_value(:imageUrl, :image_url) if image_url_provided?
+    attributes[:explanation] = parameter_value(:explanation) if parameter_provided?(:explanation)
+    attributes[:target_audience] = parameter_value(:targetAudience, :target_audience) if parameter_provided?(:targetAudience, :target_audience)
     attributes
   end
 
@@ -113,6 +137,8 @@ class AdminQuestionsController < ApplicationController
       "correctAnswer" => parameter_value(:correctAnswer, :correct_answer, :correctChoice, :correct_choice)
     }
     values["imageUrl"] = parameter_value(:imageUrl, :image_url) if image_url_provided?
+    values["explanation"] = parameter_value(:explanation) if parameter_provided?(:explanation)
+    values["targetAudience"] = parameter_value(:targetAudience, :target_audience) if parameter_provided?(:targetAudience, :target_audience)
 
     values.each_with_object({}) do |(field, value), errors|
       errors[field] = "must be a string" unless value.nil? || value.is_a?(String)
@@ -137,9 +163,21 @@ class AdminQuestionsController < ApplicationController
       choiceC: question.choice_c,
       choiceD: question.choice_d,
       correctAnswer: question.correct_answer,
-      imageUrl: question.image_url,
+      imageUrl: question_image_url(question),
+      explanation: question.explanation,
+      targetAudience: question.target_audience,
       createdAt: question.created_at.iso8601,
       updatedAt: question.updated_at.iso8601
     }
+  end
+
+  # Returns a path relative to the API base: an uploaded image is served from our
+  # own controller action (avoids relying on Active Storage's redirect routes,
+  # which the frontend's same-origin /api proxy does not forward). Falls back to
+  # the legacy pasted image_url string when no file has been uploaded.
+  def question_image_url(question)
+    return "/admin/questions/#{question.id}/image" if question.image.attached?
+
+    question.image_url
   end
 end

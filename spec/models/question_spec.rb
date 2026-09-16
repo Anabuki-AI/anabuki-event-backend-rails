@@ -46,4 +46,35 @@ RSpec.describe Question do
     expect(duplicate).not_to be_valid
     expect(duplicate.errors.where(:position, :taken)).to be_present
   end
+
+  it "trims persisted explanation and target audience text" do
+    question = described_class.create!(valid_attributes.merge(explanation: " 解説です ", target_audience: " 初級者向け "))
+    expect(question).to have_attributes(explanation: "解説です", target_audience: "初級者向け")
+
+    question.update!(explanation: "  ", target_audience: "  ")
+    expect(question.explanation).to be_nil
+    expect(question.target_audience).to be_nil
+  end
+
+  it "limits explanation and target audience length" do
+    question = described_class.new(valid_attributes.merge(explanation: "x" * 501, target_audience: "x" * 101))
+
+    expect(question).not_to be_valid
+    expect(question.errors).to include(:explanation, :target_audience)
+  end
+
+  it "validates an attached image's content type and size" do
+    question = described_class.new(valid_attributes.merge(position: 99))
+    question.image.attach(io: StringIO.new("not an image"), filename: "notes.txt", content_type: "text/plain")
+
+    expect(question).not_to be_valid
+    expect(question.errors).to include(:image)
+
+    question.image.attach(io: StringIO.new("\x89PNG\r\n\x1a\n".b), filename: "question.png", content_type: "image/png")
+    expect(question).to be_valid
+
+    question.image.attach(io: StringIO.new("x" * (described_class::MAX_IMAGE_BYTE_SIZE + 1)), filename: "big.png", content_type: "image/png")
+    expect(question).not_to be_valid
+    expect(question.errors).to include(:image)
+  end
 end

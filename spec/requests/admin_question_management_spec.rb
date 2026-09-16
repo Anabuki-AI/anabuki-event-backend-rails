@@ -55,6 +55,44 @@ RSpec.describe "Admin question management", type: :request do
     expect(response.parsed_body.map { |question| question.fetch("position") }).to eq([ 2 ])
   end
 
+  it "uploads, serves, and removes a question image alongside explanation and target audience text" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post "/api/admin/questions", params: question_payload.merge(
+      explanation: "これは解説です",
+      targetAudience: "初級者向け",
+      image: fixture_file_upload("question.png", "image/png")
+    )
+    expect(response).to have_http_status(:created)
+    created = response.parsed_body
+    expect(created).to include("explanation" => "これは解説です", "targetAudience" => "初級者向け")
+    expect(created.fetch("imageUrl")).to eq("/admin/questions/#{created.fetch('id')}/image")
+
+    get "/api#{created.fetch('imageUrl')}"
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq("image/png")
+
+    put "/api/admin/questions/#{created.fetch('id')}", params: question_payload.merge(removeImage: "true")
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("imageUrl")).to be_nil
+
+    get "/api/admin/questions/#{created.fetch('id')}/image"
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "rejects an oversized explanation, target audience, or invalid image upload" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post "/api/admin/questions", params: question_payload.merge(
+      explanation: "x" * 501,
+      targetAudience: "x" * 101,
+      image: fixture_file_upload("notes.txt", "text/plain")
+    )
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("explanation", "targetAudience", "image")
+  end
+
   it "accepts the PR #16 choices and correctChoice request fields" do
     authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
 
