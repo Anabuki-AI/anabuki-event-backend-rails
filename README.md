@@ -109,7 +109,20 @@ GET  /api/admin/access-requests
 POST /api/admin/access-requests/:id/approve
 POST /api/admin/access-requests/:id/reject
 GET/DELETE /api/admin/allowed-emails(/:id)
+GET  /api/admin/questions
+POST /api/admin/questions
+GET/PUT/DELETE /api/admin/questions/:id
+GET  /api/admin/confidence-multipliers
+PATCH /api/admin/confidence-multipliers/:level
 ```
+
+### 問題管理 API
+
+問題管理 API は既存の device-bound な管理セッションと `MANAGEMENT_PAGE_VIEW` Pundit permission を必要とします。`POST`、`PUT`、`DELETE`、`PATCH` は同一 origin 保護の対象です。`GET /api/admin/questions` は `position` 順で返し、作成時の `position` は末尾に安全に採番されます（削除後の欠番は維持します）。
+
+問題の作成・更新には `questionText`、`choiceA`〜`choiceD`、`correctAnswer` (`A`〜`D`) を JSON で送り、任意の `imageUrl` は `null` または HTTP(S) URL にします。レスポンスは `id`、`position`、上記の問題フィールド、`imageUrl`、`createdAt`、`updatedAt` を返します。入力検証エラーは `422 { "error": "...", "fieldErrors": { "questionText": "..." } }` です。初期の編集画面互換として、作成・更新では `choices: { A, B, C, D }` と `correctChoice` も受け付けます。
+
+自信度倍率は `GET /api/admin/confidence-multipliers` で常に `{ "high": "2.00", "normal": "1.00", "low": "0.50" }` 形式（更新済みの値を含む）を返します。`PATCH /api/admin/confidence-multipliers/:level` は `{ "confidenceMultiplier": number }` を受け、`high`、`normal`、`low` のいずれかを 0〜9.99・小数第2位までで更新します。
 
 ## Configuration
 
