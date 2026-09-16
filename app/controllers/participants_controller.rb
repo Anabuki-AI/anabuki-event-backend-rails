@@ -39,12 +39,9 @@ class ParticipantsController < ApplicationController
     require_participant_same_origin!
 
     session = participant_auth.current_session!
-    ParticipantReaction.create!(
-      participant: session.participant,
-      participant_session: session,
-      reaction: params.require(:reaction),
-      reacted_at: Time.current
-    )
+    event = session.record_reaction(reaction: params.require(:reaction))
+
+    return render_error("Reaction rate limit exceeded", :too_many_requests) unless event
 
     head :created
   rescue ActionController::ParameterMissing

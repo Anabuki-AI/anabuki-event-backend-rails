@@ -34,6 +34,24 @@ RSpec.describe ParticipantReaction do
     expect(event.errors.of_kind?(:reaction, :inclusion)).to be(true)
   end
 
+  it "enforces allowed reactions with a database check constraint" do
+    now = Time.current
+
+    expect {
+      described_class.insert_all!([
+        {
+          id: SecureRandom.uuid,
+          participant_id: participant.id,
+          participant_session_id: participant_session.id,
+          reaction: "🔥",
+          reacted_at: now,
+          created_at: now,
+          updated_at: now
+        }
+      ])
+    }.to raise_error(ActiveRecord::StatementInvalid, /participant_reactions_reaction/)
+  end
+
   it "requires a server reaction time and matching participant session" do
     other_participant = Participant.create!(
       display_name: "Other Player",

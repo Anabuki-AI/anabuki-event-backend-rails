@@ -8,6 +8,10 @@ class CreateParticipantReactions < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_index :participant_reactions, [ :reaction, :reacted_at ]
+    # Aggregation normally constrains a time window before grouping by reaction.
+    add_index :participant_reactions, [ :reacted_at, :reaction ]
+    add_check_constraint :participant_reactions,
+      "reaction IN ('👏', '🎉', '🙌', '😂', '😢', '😲', '👍', '❤️')",
+      name: "participant_reactions_reaction"
   end
 end

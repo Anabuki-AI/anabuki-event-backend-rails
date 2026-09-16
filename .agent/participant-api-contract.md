@@ -62,7 +62,7 @@
 
 ## 待機画面リアクション
 
-`POST /api/participants/reactions` は有効な参加者cookieを必要とし、現在のcookieから解決した `participant` と `participant_session` にイベントを紐付けます。クライアントが参加者ID・セッションID・時刻を指定することはできません。サーバーが `reaction` と `reacted_at`（サーバー時刻）をイベント履歴として保存し、将来の運営画面で集計・表示に利用します。
+`POST /api/participants/reactions` は有効な参加者cookieを必要とし、現在のcookieから解決した `participant` と `participant_session` にイベントを紐付けます。クライアントが参加者ID・セッションID・時刻を指定しても無視され、サーバー値だけが保存されます。サーバーが `reaction` と `reacted_at`（サーバー時刻）をイベント履歴として保存し、将来の運営画面で集計・表示に利用します。
 
 JSON body:
 
@@ -74,4 +74,4 @@ JSON body:
 
 許可する `reaction` は現在の待機画面で使う `👏`、`🎉`、`🙌`、`😂`、`😢`、`😲`、`👍`、`❤️` だけです。成功時は個人情報・参加者ID・セッション情報を返さず、bodyなしの `201 Created` を返します。
 
-不正なJSONまたは `reaction` の欠落は `400`、許可されないreactionは `422` を返します。無効・未ログインのcookieは `401 {"error":"Participant session is required"}`、許可されない `Origin` は `403 {"error":"Origin is not allowed"}` を返します。
+不正なJSONまたは `reaction` の欠落は `400`、許可されないreactionは `422` を返します。リアクションは認証済みセッションごとに500msに1件だけ記録され、500ms以内（境界を含む）の連打はイベントを作成せず `429 {"error":"Reaction rate limit exceeded"}` を返します。この判定と記録はセッション行ロック下で原子的に行われます。無効・未ログインのcookieは `401 {"error":"Participant session is required"}`、許可されない `Origin` は `403 {"error":"Origin is not allowed"}` を返します。
