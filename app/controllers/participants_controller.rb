@@ -35,6 +35,24 @@ class ParticipantsController < ApplicationController
     }
   end
 
+  def reactions
+    require_participant_same_origin!
+
+    session = participant_auth.current_session!
+    ParticipantReaction.create!(
+      participant: session.participant,
+      participant_session: session,
+      reaction: params.require(:reaction),
+      reacted_at: Time.current
+    )
+
+    head :created
+  rescue ActionController::ParameterMissing
+    render_error("reaction is required", :bad_request)
+  rescue ActionDispatch::Http::Parameters::ParseError
+    render_error("Malformed JSON", :bad_request)
+  end
+
   def destroy_session
     require_participant_same_origin!
     participant_auth.logout!

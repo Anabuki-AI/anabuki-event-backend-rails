@@ -103,6 +103,7 @@ GET  /health
 POST /api/participants
 GET  /api/participants/me
 POST /api/participants/presence
+POST /api/participants/reactions
 DELETE /api/participants/session
 GET  /api/auth/google/status
 GET  /api/auth/google/start

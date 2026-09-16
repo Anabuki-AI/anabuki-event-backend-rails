@@ -5,6 +5,7 @@ Rails.application.routes.draw do
     post "/participants", to: "participants#create"
     get "/participants/me", to: "participants#me"
     post "/participants/presence", to: "participants#presence"
+    post "/participants/reactions", to: "participants#reactions"
     delete "/participants/session", to: "participants#destroy_session"
 
     get "/auth/google/status", to: "google_auth#status"

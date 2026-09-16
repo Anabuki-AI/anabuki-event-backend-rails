@@ -2,6 +2,7 @@ class ParticipantSession < ApplicationRecord
   WAITING_ACTIVE_WINDOW_SECONDS = 75
 
   belongs_to :participant
+  has_many :participant_reactions, dependent: :destroy
 
   validates :token_hash, presence: true, length: { is: 32 }
   validates :expires_at, presence: true
