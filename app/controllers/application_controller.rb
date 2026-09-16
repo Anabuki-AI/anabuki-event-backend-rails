@@ -14,6 +14,9 @@ class ApplicationController < ActionController::API
   rescue_from OperatorAuthError do |error|
     render_error(error.message, error.status)
   end
+  rescue_from ParticipantAuthError do |error|
+    render_error(error.message, error.status)
+  end
 
   private
 
@@ -47,6 +50,21 @@ class ApplicationController < ActionController::API
 
   def admin_auth
     @admin_auth ||= AdminAuth.new(cookies:, config: admin_auth_config)
+  end
+
+  def participant_auth_config
+    @participant_auth_config ||= ParticipantAuthConfig.new
+  end
+
+  def participant_auth
+    @participant_auth ||= ParticipantAuth.new(cookies:, config: participant_auth_config)
+  end
+
+  def require_participant_same_origin!
+    origin = request.headers["Origin"]
+    return if origin.blank? || participant_auth_config.allowed_origin?(origin)
+
+    raise ParticipantAuthError.new("Origin is not allowed", :forbidden)
   end
 
   def operator_auth_config

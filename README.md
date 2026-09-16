@@ -1,11 +1,12 @@
 # Anabuki Event Backend Rails
 
-`anabuki-event-backend` の Javalin API を置き換える Rails 8 API です。登録・認証は Google OAuth に統一しています。Nuxt frontend 互換の `/health`、Google OAuth と管理者承認 API のレスポンス形式・Cookie名を維持しています。
+`anabuki-event-backend` の Javalin API を置き換える Rails 8 API です。管理者・運営者の認証は Google OAuth を使用し、参加者は UUID + Cookie セッションで登録します。Nuxt frontend 互換の `/health`、Google OAuth と管理者承認 API のレスポンス形式・Cookie名を維持しています。
 
 ## 保護範囲と設計
 
 - PostgreSQL と Active Record migration
-- パスワードによる登録・認証や、旧 `/api/users` API は提供しません。互換用のルートや `User` モデルも残しません。
+- 参加者は `POST /api/participants` で UUIDとして登録します。表示名は非一意で、認証識別子ではありません。`participants` と `participant_sessions` は pgcrypto UUIDを使用します。
+- 参加者登録ではランダムな不透明トークンを `HttpOnly; SameSite=Lax` cookieに発行し、DBには SHA-256 hashだけを保存します。これは管理者・運営者認証とは独立した `ParticipantAuth` です。
 - Google OpenID Connect ID token の署名・audience・nonce・確認済みメールを検証してから `AdminIdentity` を作成します。再ログインは同じ Google identity を使用します。
 - 初回ログインは `APPLICANT`（管理権限なし）です。`ADMIN_EMAIL_ALLOWLIST` による環境アクセス、または承認済みの管理アクセスだけが管理画面を利用できます。
 - 管理者の device cookie と session cookie はランダム値を HttpOnly/SameSite=Lax で発行し、DBには SHA-256 hash だけを保存します。
@@ -40,13 +41,15 @@ bundle exec brakeman --no-pager -q
 
 Rails は **別DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgres-data` を使用します。Java/Flyway の `anabuki_event` DB、既存の volume、または本番DBをこのリポジトリで reset/migrate しないでください。実データ移行は承認済みのバックアップ・dry-run・照合計画を含む別作業です。
 
-`users` テーブルを作成したマージ済み migration は変更せず、既存データも削除しません。このテーブルはアプリケーションから使用しません。Google identity への自動変換・メール一致によるアカウント連携は行いません。
+このリポジトリで管理する未マージの初期migrationには、参加者用の認証情報テーブルを含めません。Google identityへの自動変換・メール一致によるアカウント連携は行いません。
 
 ## Google OAuth integration
 
 フロントエンドは `GET /api/auth/google/status` で設定状態を確認し、`GET /api/auth/google/start` へブラウザ遷移します。Google のコールバックが成功すると `ADMIN_FRONTEND_URL` へ戻り、`GET /api/admin/auth/session` から認証状態・権限を取得できます。OAuth 未設定時にパスワード認証へフォールバックすることはありません。
 
-**フロントエンドの同時変更が必要です。** 旧 `/users/new` ページ、通常登録フォームとその API client、ホームの登録リンクを撤去し、既存の Google ログイン導線を使用してください。`POST /api/users` と `GET /api/users/:id` はどちらも 404 になります。このリポジトリの変更だけでは別リポジトリのフロントエンドは更新されません。
+## Participant registration
+
+参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。完全なrequest/response契約は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
 
 ## Background jobs (Que)
 
@@ -97,6 +100,9 @@ API: `http://localhost:8080`、health check: `GET /health`。
 
 ```text
 GET  /health
+POST /api/participants
+GET  /api/participants/me
+DELETE /api/participants/session
 GET  /api/auth/google/status
 GET  /api/auth/google/start
 GET  /api/auth/google/callback
@@ -130,4 +136,4 @@ Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `
 
 ## CI
 
-GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers removal of the users API, Google OAuth registration/login and callback rejection (with external Google calls stubbed), Pundit authorization and admin access revocation, origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
+GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers UUID participant registration, hashed Cookie sessions and their revocation, Google OAuth registration/login and callback rejection (with external Google calls stubbed), Pundit authorization and admin access revocation, origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
