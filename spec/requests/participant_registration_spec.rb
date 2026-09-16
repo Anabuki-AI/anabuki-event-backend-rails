@@ -110,7 +110,7 @@ RSpec.describe "Participant registration", type: :request do
     post "/api/participants", params: registration, headers:, as: :json
     expect(response).to have_http_status(:forbidden)
 
-    delete "/api/participants/session", headers:
+    delete "/api/participants/session", headers: headers
     expect(response).to have_http_status(:forbidden)
   end
 end
