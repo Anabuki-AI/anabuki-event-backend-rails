@@ -8,6 +8,13 @@ Rails.application.routes.draw do
 
     get "/admin/auth/session", to: "admin_auth#session"
     get "/admin/api-status", to: "admin_api_status#show"
+    get "/admin/questions", to: "admin_questions#index"
+    post "/admin/questions", to: "admin_questions#create"
+    get "/admin/questions/:id", to: "admin_questions#show"
+    put "/admin/questions/:id", to: "admin_questions#update"
+    delete "/admin/questions/:id", to: "admin_questions#destroy"
+    get "/admin/confidence-multipliers", to: "admin_confidence_multipliers#index"
+    patch "/admin/confidence-multipliers/:level", to: "admin_confidence_multipliers#update"
     post "/admin/auth/logout", to: "admin_auth#logout"
     post "/admin/auth/exchange", to: "admin_auth#exchange"
     get "/admin/access-request", to: "access_requests#show"
