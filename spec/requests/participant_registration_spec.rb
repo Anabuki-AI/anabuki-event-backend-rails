@@ -93,7 +93,8 @@ RSpec.describe "Participant registration", type: :request do
 
     expect(response).to have_http_status(:no_content)
     expect(ParticipantSession.sole.revoked_at).to be_present
-    expect(cookies[ParticipantAuth::SESSION_COOKIE]).to be_nil
+    # Railsのrequest specではレスポンスでクッキー削除されると "" が返る（nilではない）
+    expect(cookies[ParticipantAuth::SESSION_COOKIE]).to be_blank
     expect(ParticipantSession.sole.token_hash).to eq(Digest::SHA256.digest(raw_token))
   end
 

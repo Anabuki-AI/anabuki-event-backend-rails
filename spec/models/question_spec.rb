@@ -44,6 +44,6 @@ RSpec.describe Question do
     duplicate = described_class.new(valid_attributes.merge(question_text: "別の問題"))
 
     expect(duplicate).not_to be_valid
-    expect(duplicate.errors).to be_added(:position, :taken)
+    expect(duplicate.errors.where(:position, :taken)).to be_present
   end
 end
