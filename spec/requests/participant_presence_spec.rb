@@ -21,6 +21,8 @@ RSpec.describe "Participant waiting presence", type: :request do
     }
   end
 
+  let(:allowed_origin_headers) { { "Origin" => ENV.fetch("PUBLIC_BASE_URL") } }
+
   it "records the current heartbeat and returns a non-cacheable aggregate without participant data" do
     post "/api/participants", params: registration, as: :json
     current_session = ParticipantSession.sole
@@ -32,7 +34,7 @@ RSpec.describe "Participant waiting presence", type: :request do
     create_participant_session(create_participant, heartbeat_at: 1.second.ago, revoked_at: Time.current)
     create_participant_session(create_participant, heartbeat_at: 1.second.ago, expires_at: 1.second.ago)
 
-    post "/api/participants/presence", headers: { "Origin" => "https://event.example" }, as: :json
+    post "/api/participants/presence", headers: allowed_origin_headers, as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.headers.fetch("Cache-Control")).to eq("no-store")
@@ -41,8 +43,21 @@ RSpec.describe "Participant waiting presence", type: :request do
       "activeParticipantCount" => 2,
       "activeWindowSeconds" => 75
     )
+    expect(response.parsed_body.fetch("observedAt")).to match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/)
     expect(Time.iso8601(response.parsed_body.fetch("observedAt"))).to be_present
     expect(current_session.reload.waiting_heartbeat_at).to be_within(1.second).of(Time.current)
+  end
+
+  it "rejects presence after the participant session is deleted" do
+    post "/api/participants", params: registration, headers: allowed_origin_headers, as: :json
+
+    delete "/api/participants/session", headers: allowed_origin_headers
+    expect(response).to have_http_status(:no_content)
+
+    post "/api/participants/presence", headers: allowed_origin_headers, as: :json
+
+    expect(response).to have_http_status(:unauthorized)
+    expect(response.parsed_body).to eq("error" => "Participant session is required")
   end
 
   it "requires a valid participant session and rejects cross-origin heartbeats" do

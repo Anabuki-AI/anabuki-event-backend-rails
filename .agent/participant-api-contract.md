@@ -47,7 +47,7 @@
 
 ## 待機人数 presence
 
-`POST /api/participants/presence` は有効な参加者cookieを必要とし、現在の `participant_sessions.waiting_heartbeat_at` をサーバー時刻で更新します。revoke済み・失効済みを除き、観測時刻から75秒以内にheartbeatを送ったセッションを `participant_id` ごとに重複排除して数えます。レスポンスは個人情報・参加者ID・セッション情報を含まず、常に `Cache-Control: no-store` です。
+`POST /api/participants/presence` は有効な参加者cookieを必要とし、現在の `participant_sessions.waiting_heartbeat_at` をサーバー時刻で更新します。revoke済み・失効済みを除き、観測時刻から75秒以内にheartbeatを送ったセッションを `participant_id` ごとに重複排除して数えます。レスポンスは個人情報・参加者ID・セッション情報を含まず、常に `Cache-Control: no-store` です。`observedAt` は UTC の ISO 8601 表記（末尾 `Z`）で返します。
 
 ```json
 {

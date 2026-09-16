@@ -30,7 +30,7 @@ class ParticipantsController < ApplicationController
     response.headers["Cache-Control"] = "no-store"
     render json: {
       activeParticipantCount: ParticipantSession.active_participant_count(observed_at:),
-      observedAt: observed_at.iso8601,
+      observedAt: observed_at.utc.iso8601,
       activeWindowSeconds: ParticipantSession::WAITING_ACTIVE_WINDOW_SECONDS
     }
   end
