@@ -77,6 +77,27 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     expect(Google::Auth::IDTokens).not_to receive(:verify_oidc)
   end
 
+  it "reports operator OAuth configuration independently from admin OAuth" do
+    with_env("GOOGLE_OAUTH_CALLBACK_URL" => "") do
+      get "/api/auth/operator/google/status"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to eq("configured" => true)
+
+      get "/api/auth/google/status"
+      expect(response.parsed_body).to eq("configured" => false)
+    end
+  end
+
+  it "reports operator OAuth as unconfigured when its callback is invalid" do
+    with_env("OPERATOR_GOOGLE_OAUTH_CALLBACK_URL" => "") do
+      get "/api/auth/operator/google/status"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to eq("configured" => false)
+    end
+  end
+
   it "refuses to start OAuth without creating state when unconfigured" do
     with_env("GOOGLE_CLIENT_SECRET" => "") do
       expect {
