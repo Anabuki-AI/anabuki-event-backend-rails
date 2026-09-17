@@ -14,6 +14,7 @@ Rails.application.routes.draw do
 
     get "/admin/auth/session", to: "admin_auth#session"
     get "/admin/api-status", to: "admin_api_status#show"
+    get "/admin/monitoring", to: "admin_monitoring#show"
     get "/admin/questions", to: "admin_questions#index"
     post "/admin/questions", to: "admin_questions#create"
     get "/admin/questions/:id", to: "admin_questions#show"
