@@ -11,7 +11,7 @@ class AdminAuth
   APPLICANT_SESSION_COOKIE = "admin_applicant_session"
   OAUTH_STATE_COOKIE = "admin_oauth_state"
   APPLICANT_TTL = 20.minutes
-  MANAGEMENT_TTL = 8.hours
+  MANAGEMENT_TTL = 3.weeks
   DEVICE_TTL = 365.days
   STATE_TTL = 10.minutes
 

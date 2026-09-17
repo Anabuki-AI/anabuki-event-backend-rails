@@ -161,6 +161,7 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     expect(device_id).to match(/\A[A-Za-z0-9_-]{40,64}\z/)
     expect(session_key).to match(/\A[A-Za-z0-9_-]{40,64}\z/)
     expect(record).to be_manager
+    expect(record.expires_at).to be_within(1.second).of(3.weeks.from_now)
     expect(record.operator_identity_id).to eq(identity.id)
     expect(record.device_id_hash).to eq(Digest::SHA256.digest(device_id))
     expect(record.session_key_hash).to eq(Digest::SHA256.digest(session_key))
@@ -222,7 +223,7 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     expect(response).to redirect_to(oauth_env.fetch("OPERATOR_FRONTEND_URL"))
     record = Operator::DeviceSession.sole
     expect(record).to be_applicant
-    expect(record.expires_at).to be < 21.minutes.from_now
+    expect(record.expires_at).to be_within(1.second).of(20.minutes.from_now)
     expect(cookies[OperatorAuth::APPLICANT_SESSION_COOKIE]).to be_present
     expect(cookies[OperatorAuth::SESSION_COOKIE]).to be_blank
 

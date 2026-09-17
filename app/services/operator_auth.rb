@@ -14,7 +14,7 @@ class OperatorAuth
   APPLICANT_SESSION_COOKIE = "operator_applicant_session"
   OAUTH_STATE_COOKIE = "operator_oauth_state"
   APPLICANT_TTL = 20.minutes
-  SESSION_TTL = 8.hours
+  SESSION_TTL = 3.weeks
   DEVICE_TTL = 365.days
   STATE_TTL = 10.minutes
 
@@ -131,7 +131,7 @@ class OperatorAuth
     return unless identity && identity.email == record.email && identity.google_sub == record.google_sub
 
     # A direct grant takes effect for a current applicant cookie as well. The
-    # next Google login creates the normal eight-hour manager session; this
+    # next Google login creates the normal three-week manager session; this
     # avoids making a newly granted operator sign in again before starting work.
     Session.new(record, identity, manager_access?(identity) ? "MANAGER" : "APPLICANT")
   end

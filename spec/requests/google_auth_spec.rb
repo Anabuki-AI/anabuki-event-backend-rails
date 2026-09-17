@@ -163,6 +163,7 @@ RSpec.describe "Google OAuth authentication", type: :request do
     expect(device_id).to match(/\A[A-Za-z0-9_-]{40,64}\z/)
     expect(applicant_session_key).to match(/\A[A-Za-z0-9_-]{40,64}\z/)
     expect(session).to be_applicant
+    expect(session.expires_at).to be_within(1.second).of(20.minutes.from_now)
     expect(session.device_id_hash).to eq(Digest::SHA256.digest(device_id))
     expect(session.session_key_hash).to eq(Digest::SHA256.digest(applicant_session_key))
     expect(session.device_id_hash).not_to eq(device_id)
@@ -243,9 +244,11 @@ RSpec.describe "Google OAuth authentication", type: :request do
     )
 
     complete_google_oauth(state:, code: "manager-code")
+    session = AdminDeviceSession.sole
     get "/api/admin/auth/session"
 
     expect(response).to have_http_status(:ok)
+    expect(session.expires_at).to be_within(1.second).of(3.weeks.from_now)
     expect(response.parsed_body).to include(
       "accessSource" => "MANAGEMENT_ACCESS",
       "permissions" => %w[MANAGEMENT_PAGE_VIEW ACCESS_REQUEST_APPROVE MANAGEMENT_ACCESS_REVOKE]
