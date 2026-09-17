@@ -1,6 +1,9 @@
 require "rails_helper"
 
 RSpec.describe "Participant quiz answers", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
+  after { travel_back }
   around do |example|
     with_env("PUBLIC_BASE_URL" => "https://event.example") do
       host! "event.example"
@@ -111,6 +114,19 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(body["answered"]).to be(true)
     expect(body["my_answer"]).to eq("choice" => "C", "confidence_level" => "low")
     expect(body["correct_answer"]).to be_nil
+  end
+
+  it "rejects answers after the server-side time limit and closes the window" do
+    question.update!(time_limit_seconds: 1)
+
+    travel_to(QuizSession.current.reload.phase_started_at + 2.seconds) do
+      expect {
+        submit_answer
+      }.not_to change(ParticipantAnswer, :count)
+
+      expect(response).to have_http_status(:conflict)
+      expect(QuizSession.current.reload.phase).to eq("closed")
+    end
   end
 
   it "rejects answers outside the answering phase with 409" do

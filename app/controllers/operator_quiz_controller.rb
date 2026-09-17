@@ -1,5 +1,6 @@
 class OperatorQuizController < ApplicationController
   before_action :authorize_event_operator!
+  before_action :require_operator_same_origin!, only: %i[start publish close reveal finish reset]
 
   rescue_from QuizSession::InvalidTransition do |error|
     render_error(error.message, :unprocessable_content)
@@ -15,11 +16,8 @@ class OperatorQuizController < ApplicationController
   end
 
   def publish
-    position = params.require(:position)
-    QuizSession.current.publish!(position: position)
+    QuizSession.current.publish_next!
     render json: quiz_state
-  rescue ActionController::ParameterMissing
-    render_error("position is required", :bad_request)
   end
 
   def close
@@ -38,13 +36,22 @@ class OperatorQuizController < ApplicationController
   end
 
   # Debug-only: forces the session back to waiting and wipes participant
-  # answers so operators can replay the whole quiz during testing.
+  # answers so operators can replay the whole quiz during testing. This is
+  # intentionally unavailable outside development/test environments.
   def reset
-    ActiveRecord::Base.transaction do
-      QuizSession.current.reset!
-      ParticipantAnswer.delete_all
-    end
+    return render_error("Quiz reset is disabled in this environment", :forbidden) unless reset_allowed?
+
+    QuizSession.current.reset!
     render json: quiz_state
+  end
+
+  def image
+    question = Question.find(params[:id])
+    quiz_session = QuizSession.current
+    allowed = [ quiz_session.current_question, quiz_session.next_question ].compact.any? { |candidate| candidate.id == question.id }
+    return head :not_found unless allowed
+
+    render_attached_question_image(question)
   end
 
   private
@@ -60,7 +67,7 @@ class OperatorQuizController < ApplicationController
       phase: quiz_session.phase,
       phase_started_at: quiz_session.phase_started_at&.iso8601,
       current: current_question && current_question_json(current_question),
-      next_question: current_question && next_question_json(current_question),
+      next_question: current_question && next_question_json,
       question_count: Question.count,
       total_participants: Participant.count
     }
@@ -79,7 +86,7 @@ class OperatorQuizController < ApplicationController
         "C" => question.choice_c,
         "D" => question.choice_d
       },
-      image_url: question.image_url,
+      image_url: question_image_url(question),
       correct_answer: question.correct_answer,
       time_limit_seconds: question.time_limit_seconds,
       answered_count:,
@@ -91,8 +98,8 @@ class OperatorQuizController < ApplicationController
   # UI can show a "next up" card. Deliberately omits correct_answer (and the
   # answered_count/answered_rate stats, which only make sense once a question
   # is actually live) to keep answers hidden until a question is published.
-  def next_question_json(question)
-    next_question = Question.find_by(position: question.position + 1)
+  def next_question_json
+    next_question = QuizSession.current.next_question
     return nil unless next_question
 
     {
@@ -105,7 +112,7 @@ class OperatorQuizController < ApplicationController
         "C" => next_question.choice_c,
         "D" => next_question.choice_d
       },
-      image_url: next_question.image_url
+      image_url: question_image_url(next_question)
     }
   end
 
@@ -118,5 +125,22 @@ class OperatorQuizController < ApplicationController
     return 0.0 if total_participants.zero?
 
     (answered_count.to_f / total_participants).round(2)
+  end
+
+  def question_image_url(question)
+    return "/operator/quiz/questions/#{question.id}/image" if question.image.attached?
+
+    question.image_url
+  end
+
+  def require_operator_same_origin!
+    origin = request.headers["Origin"]
+    return if origin.blank? || operator_auth_config.allowed_origin?(origin) || admin_auth_config.allowed_origin?(origin)
+
+    raise AdminAuthError.new("Origin is not allowed", :forbidden)
+  end
+
+  def reset_allowed?
+    Rails.env.development? || Rails.env.test?
   end
 end

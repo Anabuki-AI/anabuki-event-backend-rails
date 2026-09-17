@@ -51,6 +51,13 @@ class ApplicationController < ActionController::API
     render json: { error: message }, status: status
   end
 
+  def render_attached_question_image(question)
+    return head :not_found unless question.image.attached?
+
+    response.headers["Cache-Control"] = "private, no-store"
+    send_data question.image.download, type: question.image.content_type, disposition: "inline"
+  end
+
   # Resolves the acting identity for audit logging: the admin session identity
   # when present, otherwise the operator manager session identity. Operator
   # identities live in the separate operator database, so the recorder keeps

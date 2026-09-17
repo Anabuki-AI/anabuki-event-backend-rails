@@ -47,9 +47,11 @@ Rails.application.routes.draw do
     post "/operator/quiz/reveal", to: "operator_quiz#reveal"
     post "/operator/quiz/finish", to: "operator_quiz#finish"
     post "/operator/quiz/reset", to: "operator_quiz#reset"
+    get "/operator/quiz/questions/:id/image", to: "operator_quiz#image"
 
     get "/participant/quiz/state", to: "participant_quiz#state"
     post "/participant/quiz/answers", to: "participant_quiz#create"
+    get "/participant/quiz/questions/:id/image", to: "participant_quiz#image"
 
     get "/rankings", to: "rankings#index"
 
