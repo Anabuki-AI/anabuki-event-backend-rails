@@ -78,6 +78,14 @@ RSpec.describe "Participant quiz answers", type: :request do
     )
   end
 
+  it "uses the question's configured points when scoring an answer" do
+    question.update!(points: 250)
+
+    submit_answer(choice: "B", confidence_level: "high")
+
+    expect(ParticipantAnswer.sole.awarded_points).to eq(500)
+  end
+
   it "stores zero points for an incorrect answer" do
     submit_answer(choice: "A", confidence_level: "low")
 

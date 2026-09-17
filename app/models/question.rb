@@ -30,6 +30,7 @@ class Question < ApplicationRecord
   validate :image_is_valid_upload
 
   before_validation :normalize_text_attributes
+  after_update :recalculate_participant_answer_scores, if: :scoring_fields_changed?
 
   class << self
     # PostgreSQL advisory locks serialize position allocation even before a
@@ -45,6 +46,15 @@ class Question < ApplicationRecord
   end
 
   private
+
+  def scoring_fields_changed?
+    saved_change_to_correct_answer? || saved_change_to_points?
+  end
+
+  def recalculate_participant_answer_scores
+    previous_correct_answer = correct_answer_before_last_save if saved_change_to_correct_answer?
+    ParticipantAnswer.recalculate_for_question!(self, previous_correct_answer:)
+  end
 
   def normalize_text_attributes
     self.question_text = question_text.to_s.strip
