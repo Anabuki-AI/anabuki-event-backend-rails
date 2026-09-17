@@ -39,7 +39,8 @@ class QuizSession < ApplicationRecord
       started_at = Time.current
       update!(
         status: "in_progress", current_question: question, phase: "answering",
-        phase_started_at: started_at, answering_started_at: started_at
+        phase_started_at: started_at, answering_started_at: started_at,
+        finished_elapsed_seconds: nil
       )
     end
   end
@@ -157,7 +158,16 @@ class QuizSession < ApplicationRecord
       lock!
       require_status_not_finished!
 
-      update!(status: "finished", current_question: nil, phase: nil, phase_started_at: Time.current, answering_started_at: nil)
+      finished_at = Time.current
+      elapsed_seconds = [ (finished_at - phase_started_at).floor, 0 ].max if phase_started_at
+      update!(
+        status: "finished",
+        current_question: nil,
+        phase: nil,
+        phase_started_at: finished_at,
+        answering_started_at: nil,
+        finished_elapsed_seconds: elapsed_seconds
+      )
     end
   end
 
@@ -169,7 +179,14 @@ class QuizSession < ApplicationRecord
       lock!
       ParticipantAnswer.delete_all
       Question.update_all(revealed_at: nil)
-      update!(status: "waiting", current_question: nil, phase: nil, phase_started_at: Time.current, answering_started_at: nil)
+      update!(
+        status: "waiting",
+        current_question: nil,
+        phase: nil,
+        phase_started_at: Time.current,
+        answering_started_at: nil,
+        finished_elapsed_seconds: nil
+      )
     end
   end
 

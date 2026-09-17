@@ -17,7 +17,7 @@ RSpec.describe QuizSession do
     )
   end
 
-  it "stamps phase_started_at on every phase transition" do
+  it "stamps phase_started_at on every transition and fixes the final elapsed seconds" do
     create_question(position: 1)
     second = create_question(position: 2)
     session = described_class.current
@@ -46,6 +46,24 @@ RSpec.describe QuizSession do
       session.finish!
     end
     expect(session.reload.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:02:00"))
+    expect(session.finished_elapsed_seconds).to eq(50)
+  end
+
+  it "clears the fixed elapsed seconds on reset" do
+    create_question(position: 1)
+    session = described_class.current
+
+    travel_to Time.zone.parse("2026-09-20 10:00:00") do
+      session.start!
+    end
+    travel_to Time.zone.parse("2026-09-20 10:00:07") do
+      session.finish!
+    end
+    expect(session.reload.finished_elapsed_seconds).to eq(7)
+
+    session.reset!
+
+    expect(session.reload.finished_elapsed_seconds).to be_nil
   end
 
   it "starts closing immediately but finalizes the requested close only after ten seconds" do
