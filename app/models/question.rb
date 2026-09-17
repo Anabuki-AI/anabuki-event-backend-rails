@@ -6,7 +6,7 @@ class Question < ApplicationRecord
   MAX_IMAGE_URL_LENGTH = 2048
   MAX_EXPLANATION_LENGTH = 500
   MAX_TARGET_AUDIENCE_LENGTH = 100
-  ALLOWED_IMAGE_CONTENT_TYPES = %w[image/png image/jpeg image/webp image/gif].freeze
+  ALLOWED_IMAGE_CONTENT_TYPES = %w[image/webp].freeze
   MAX_IMAGE_BYTE_SIZE = 5.megabytes
   POSITION_LOCK_KEY = 6_813_271_904
   MIN_POINTS = 1
@@ -83,7 +83,7 @@ class Question < ApplicationRecord
     return unless image.attached?
 
     unless image.content_type.in?(ALLOWED_IMAGE_CONTENT_TYPES)
-      errors.add(:image, "must be a PNG, JPEG, WEBP, or GIF file")
+      errors.add(:image, "must be a WEBP file")
     end
 
     errors.add(:image, "must be smaller than 5MB") if image.byte_size > MAX_IMAGE_BYTE_SIZE
