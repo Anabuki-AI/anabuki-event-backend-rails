@@ -1,7 +1,7 @@
 require "uri"
 
 # Device-bound session flow for event operators. Identity and session data
-# live in the dedicated operator database. Operator access is granted directly
+# live in the primary database. Operator access is granted directly
 # by an administrator to a Google-authenticated identity; allowlisted emails
 # remain an optional environment-level source of access.
 class OperatorAuth
@@ -80,7 +80,8 @@ class OperatorAuth
   # Only identities created by a completed operator Google login are listed.
   # No email-address entry point exists, preventing grants to unverified users.
   def management_identities!
-    Operator::Identity.order(:email).map { |identity| management_identity_json(identity) }
+    # Encrypted columns cannot be ordered by their decrypted value in SQL.
+    Operator::Identity.all.sort_by(&:email).map { |identity| management_identity_json(identity) }
   end
 
   def management_identity_json(identity)

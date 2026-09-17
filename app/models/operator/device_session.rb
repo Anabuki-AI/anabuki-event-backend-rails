@@ -1,4 +1,6 @@
 class Operator::DeviceSession < Operator::ApplicationRecord
+  encrypts :email, deterministic: true
+
   belongs_to :operator_identity, class_name: "Operator::Identity"
   enum :access_source, { manager: "MANAGER", applicant: "APPLICANT" }, validate: true
 

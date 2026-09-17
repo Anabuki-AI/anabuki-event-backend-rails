@@ -39,7 +39,9 @@ bundle exec brakeman --no-pager -q
 
 ## Migration safety
 
-Rails は **別DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgres-data` を使用します。Java/Flyway の `anabuki_event` DB、既存の volume、または本番DBをこのリポジトリで reset/migrate しないでください。実データ移行は承認済みのバックアップ・dry-run・照合計画を含む別作業です。
+Rails は PostgreSQL の **単一DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgres-data` を使用します。Java/Flyway の `anabuki_event` DB、既存の volume、または本番DBをこのリポジトリで reset/migrate しないでください。実データ移行は承認済みのバックアップ・dry-run・照合計画を含む別作業です。
+
+`20260918060100_create_operator_tables_in_primary.rb` が、operator の最終スキーマ（`operator_identities`、`operator_device_sessions`、`operator_oauth_states`）を primary DB に新規作成します。既存の `db/operator_migrate/` は履歴資料として変更せず、Rails のmigration pathには含めません。既存 operator DB からのデータ移送はこの変更では自動化していません。
 
 このリポジトリで管理する未マージの初期migrationには、参加者用の認証情報テーブルを含めません。Google identityへの自動変換・メール一致によるアカウント連携は行いません。
 
@@ -137,7 +139,7 @@ PATCH /api/admin/confidence-multipliers/:level
 
 ## Configuration
 
-Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `SECRET_KEY_BASE`, `STATUSPAGE_API_KEY`, `DATADOG_API_KEY`, and `DATADOG_APP_KEY` must come from a local/deployment secret store. `SECRET_KEY_BASE` is mandatory in production (`bin/rails secret` generates one). Register both `GOOGLE_OAUTH_CALLBACK_URL` and `OPERATOR_GOOGLE_OAUTH_CALLBACK_URL` exactly in Google Cloud Console, and keep `OPERATOR_FRONTEND_URL` pointed at the operator portal rather than the admin portal. Set HTTPS public URLs in production so cookies get the `Secure` flag. Statuspage/Datadog environment setup and the admin status response contract are documented in [`.agent/admin-api-status.md`](.agent/admin-api-status.md).
+Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `SECRET_KEY_BASE`, `ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY`, `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY`, `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT`, `STATUSPAGE_API_KEY`, `DATADOG_API_KEY`, and `DATADOG_APP_KEY` must come from a local/deployment secret store. All three Active Record Encryption keys are mandatory and non-blank in production; generate them locally with `bin/rails db:encryption:init` and store them only in the deployment secret store. Do not enable plaintext fallback. Operator `email` is encrypted by Rails 8.1 Active Record Encryption with `deterministic: true`, because Google OAuth both looks up an existing identity by normalized email and enforces uniqueness. Reads return the decrypted model attribute; the database stores only ciphertext. Register both `GOOGLE_OAUTH_CALLBACK_URL` and `OPERATOR_GOOGLE_OAUTH_CALLBACK_URL` exactly in Google Cloud Console, and keep `OPERATOR_FRONTEND_URL` pointed at the operator portal rather than the admin portal. Set HTTPS public URLs in production so cookies get the `Secure` flag. Statuspage/Datadog environment setup and the admin status response contract are documented in [`.agent/admin-api-status.md`](.agent/admin-api-status.md).
 
 ## CI
 
@@ -147,7 +149,7 @@ GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. R
 
 The Rails image is deployed by the `cloudflare/` Worker using the official `@cloudflare/containers` SDK. The Worker forwards requests to one named `RailsContainer` instance on the container's configured port 8080 (`defaultPort = 8080`, matching `EXPOSE 8080` and `PORT=8080`). Wrangler's `image: "../Dockerfile"` is the Dockerfile itself, as required by the Containers deploy format; the Docker build context includes the repository root `Dockerfile`, `Gemfile`, `Gemfile.lock`, application source, and `cloudflare/` is only the Wrangler project directory. The container disk is ephemeral, so Active Storage uses the `r2` service in production (`aws-sdk-s3`) and reads `R2_ENDPOINT`, `R2_BUCKET`, `R2_REGION`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` from the Worker environment.
 
-The production Docker command starts Rails only. It deliberately does **not** run `db:prepare`: the external PostgreSQL database is not provisioned by this repository, and first migration must be an explicit, reviewed operation after the database owner confirms the target. Hyperdrive is not configured for Rails, including the shared Hyperdrive ID `7d2c5dac9bbd4bbca23b3a0a66116804`. This is not merely an unvalidated convenience: the official [Hyperdrive getting-started documentation](https://developers.cloudflare.com/hyperdrive/get-started/) says its secure connection string is accessible only from the Worker, and the [connection lifecycle documentation](https://developers.cloudflare.com/hyperdrive/concepts/connection-lifecycle/) describes a Worker-side edge connection to the Hyperdrive instance followed by Hyperdrive's pooled origin connection. Therefore a Worker-generated `env.HYPERDRIVE.connectionString` must not be passed into a Rails Container as if it were a normal PostgreSQL URL; Containers support for this path is unverified and is not recommended. Rails connects to the externally managed PostgreSQL URLs through `DATABASE_URL` and `OPERATOR_DATABASE_URL`.
+The production Docker command starts Rails only. It deliberately does **not** run `db:prepare`: the external PostgreSQL database is not provisioned by this repository, and first migration must be an explicit, reviewed operation after the database owner confirms the target. Hyperdrive is not configured for Rails, including the shared Hyperdrive ID `7d2c5dac9bbd4bbca23b3a0a66116804`. This is not merely an unvalidated convenience: the official [Hyperdrive getting-started documentation](https://developers.cloudflare.com/hyperdrive/get-started/) says its secure connection string is accessible only from the Worker, and the [connection lifecycle documentation](https://developers.cloudflare.com/hyperdrive/concepts/connection-lifecycle/) describes a Worker-side edge connection to the Hyperdrive instance followed by Hyperdrive's pooled origin connection. Therefore a Worker-generated `env.HYPERDRIVE.connectionString` must not be passed into a Rails Container as if it were a normal PostgreSQL URL; Containers support for this path is unverified and is not recommended. Rails connects to the externally managed single PostgreSQL URL through `DATABASE_URL`.
 
 ### GitHub Actions behavior
 
@@ -157,8 +159,10 @@ The same `production` environment may hold application secret values under the n
 
 ```text
 DATABASE_URL
-OPERATOR_DATABASE_URL
 SECRET_KEY_BASE
+ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
+ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
+ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 ADMIN_EMAIL_ALLOWLIST
@@ -177,7 +181,7 @@ R2_SECRET_ACCESS_KEY
 For a manual bootstrap after the initial Worker upload, the following commands prompt for each value through stdin. Run them only from an approved operator workstation:
 
 ```bash
-for name in DATABASE_URL OPERATOR_DATABASE_URL SECRET_KEY_BASE GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET ADMIN_EMAIL_ALLOWLIST OPERATOR_EMAIL_ALLOWLIST PUBLIC_BASE_URL ADMIN_FRONTEND_URL OPERATOR_FRONTEND_URL GOOGLE_OAUTH_CALLBACK_URL OPERATOR_GOOGLE_OAUTH_CALLBACK_URL R2_ENDPOINT R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+for name in DATABASE_URL SECRET_KEY_BASE ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET ADMIN_EMAIL_ALLOWLIST OPERATOR_EMAIL_ALLOWLIST PUBLIC_BASE_URL ADMIN_FRONTEND_URL OPERATOR_FRONTEND_URL GOOGLE_OAUTH_CALLBACK_URL OPERATOR_GOOGLE_OAUTH_CALLBACK_URL R2_ENDPOINT R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
   npx wrangler secret put "$name" --config wrangler.jsonc
  done
 ```
@@ -188,24 +192,25 @@ The backend config sets `workers_dev: false`; no public workers.dev endpoint or 
 
 ### Explicit database migration procedure
 
-`Dockerfile` does not run a migration during boot. The supported procedure is an approved local workstation or an approved/manual CI job with the exact backend commit checked out and `RAILS_ENV=production`, `DATABASE_URL`, and `OPERATOR_DATABASE_URL` injected by an approved secret manager. Do **not** depend on a Containers `exec` command or an unauthenticated migration RPC. Wrangler 4.133.0 exposes `containers ssh`, but SSH is not required for the migration path.
+`Dockerfile` does not run a migration during boot. The supported procedure is an approved local workstation or an approved/manual CI job with the exact backend commit checked out and `RAILS_ENV=production`, `DATABASE_URL`, and all three encryption keys injected by an approved secret manager. Do **not** depend on a Containers `exec` command or an unauthenticated migration RPC. Wrangler 4.133.0 exposes `containers ssh`, but SSH is not required for the migration path.
 
-After the database owner confirms the target, backup, maintenance window, and rollback/restore plan, run the following in the backend checkout. The connection URLs must be injected without printing or committing them:
+After the database owner confirms the target, backup, maintenance window, and rollback/restore plan, run the following in the backend checkout. Values must be injected without printing or committing them:
 
 ```bash
 export RAILS_ENV=production
-# Inject DATABASE_URL and OPERATOR_DATABASE_URL from the approved secret store.
+# Inject DATABASE_URL and the three ACTIVE_RECORD_ENCRYPTION_* values from the approved secret store.
 
-bundle exec rails db:migrate:status:primary
-bundle exec rails db:migrate:status:operator
-# Review the two status outputs before applying anything.
-bundle exec rails db:migrate:primary
-bundle exec rails db:migrate:operator
-bundle exec rails db:migrate:status:primary
-bundle exec rails db:migrate:status:operator
+bundle exec rails db:migrate:status
+# Review the pending primary migrations, including 20260918060100_create_operator_tables_in_primary.
+bundle exec rails db:migrate
+bundle exec rails db:migrate:status
 ```
 
-The separate tasks are verified by `rails -T` in this checkout. `db:prepare` is intentionally not used for production because it may create a database when one does not exist; the container never runs it automatically. Existing production DB migration remains a separately approved operation, and no production database credentials or Cloudflare credentials are included in this change.
+`db:prepare` is intentionally not used for production because it may create a database when one does not exist; the container never runs it automatically. Existing production DB migration remains a separately approved operation, and no production database credentials, encryption key values, or Cloudflare credentials are included in this change.
+
+### Existing operator data migration (manual, not automated)
+
+The current database migration has not been verified against a real deployed database. Do not point this branch at production or at the retired operator database. If an operator database contains data, the database owner must first take verified backups of both databases and decide whether identities, sessions, and OAuth states are still needed. The supported safe default is to migrate operator identities through a reviewed offline process using the `Operator::Identity` model and the production encryption keys, then invalidate old device sessions and require Google OAuth login again. That process must preserve UUIDs only after collision checks and must verify counts, normalized emails, Google subjects, manager flags, and the unique indexes in the target. Do not copy plaintext email with SQL; model writes must perform Rails encryption. Run a dry-run against an isolated clone, obtain explicit approval, execute during the maintenance window, and perform post-migration reconciliation. No source connection or data-transfer script is included here.
 
 Manual validation without deploying the application can be run from `cloudflare/` with Node.js 22.19.0 and Docker available:
 

@@ -188,7 +188,7 @@ RSpec.describe "Operator quiz control", type: :request do
       authenticate_admin
       create_question(position: 1)
 
-      post "/api/operator/quiz/start", headers: { "Origin" => "http://localhost:3000" }, as: :json
+      post "/api/operator/quiz/start", headers: { "Origin" => "https://event.example" }, as: :json
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["phase"]).to eq("answering")

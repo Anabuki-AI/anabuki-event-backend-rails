@@ -1,24 +1,14 @@
 require "active_support/core_ext/integer/time"
-require "uri"
 
-# The primary and operator migration sets intentionally use the same version
-# namespace (for example, both have a 20260410000000 migration). They must
-# therefore target separate PostgreSQL databases; sharing one database would
-# make one database's schema_migrations table mark the other migration as run.
-if ENV["DATABASE_URL"].to_s != "" && ENV["OPERATOR_DATABASE_URL"].to_s != ""
-  begin
-    primary = URI.parse(ENV["DATABASE_URL"])
-    operator = URI.parse(ENV["OPERATOR_DATABASE_URL"])
-    same_database = [ primary.scheme, primary.host, primary.port, primary.path ] ==
-      [ operator.scheme, operator.host, operator.port, operator.path ]
-
-    if same_database
-      raise "DATABASE_URL and OPERATOR_DATABASE_URL must target separate PostgreSQL databases", cause: nil
-    end
-  rescue URI::InvalidURIError
-    raise "DATABASE_URL and OPERATOR_DATABASE_URL must be valid PostgreSQL URLs", cause: nil
+fetch_encryption_key = lambda do |name|
+  ENV.fetch(name).tap do |value|
+    raise "#{name} must not be blank" if value.strip.empty?
   end
 end
+
+Rails.application.config.active_record.encryption.primary_key = fetch_encryption_key.call("ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY")
+Rails.application.config.active_record.encryption.deterministic_key = fetch_encryption_key.call("ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY")
+Rails.application.config.active_record.encryption.key_derivation_salt = fetch_encryption_key.call("ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT")
 
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.

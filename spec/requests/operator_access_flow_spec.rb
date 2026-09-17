@@ -8,7 +8,7 @@ RSpec.describe "Operator management access", type: :request do
     end
   end
 
-  # Operator tables use their own database and therefore need explicit cleanup.
+  # Operator records use the primary database and remain explicit in setup.
   before do
     Operator::DeviceSession.delete_all
     Operator::OauthState.delete_all

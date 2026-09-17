@@ -3,6 +3,12 @@
 # your test database is "scratch space" for the test suite and is wiped
 # and recreated between test runs. Don't rely on the data there!
 
+# Test-only defaults are intentionally fixed and isolated from development and
+# production. No unencrypted fallback is enabled.
+Rails.application.config.active_record.encryption.primary_key = ENV.fetch("ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY", "anabuki-event-test-primary-key").presence || "anabuki-event-test-primary-key"
+Rails.application.config.active_record.encryption.deterministic_key = ENV.fetch("ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY", "anabuki-event-test-deterministic-key").presence || "anabuki-event-test-deterministic-key"
+Rails.application.config.active_record.encryption.key_derivation_salt = ENV.fetch("ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT", "anabuki-event-test-key-derivation-salt").presence || "anabuki-event-test-key-derivation-salt"
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 

@@ -20,8 +20,8 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     end
   end
 
-  # Operator tables live in a separate database, which transactional fixtures
-  # do not roll back; clean them before every example.
+  # Keep the operator records explicit in this request spec; they share the
+  # primary database and are covered by the normal transactional fixture.
   before do
     Operator::DeviceSession.delete_all
     Operator::OauthState.delete_all
@@ -142,7 +142,7 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     expect(persisted_state.expires_at).to be > Time.current
   end
 
-  it "creates an allowlisted operator identity and a device-bound session in the operator database" do
+  it "creates an allowlisted operator identity and a device-bound session in the primary database" do
     state = start_operator_oauth.fetch("state")
     expect_google_exchange(code: "operator-code", claims: google_claims(state:, email: "MANAGER@example.com"))
 
@@ -165,7 +165,8 @@ RSpec.describe "Operator Google OAuth authentication", type: :request do
     expect(record.device_id_hash).to eq(Digest::SHA256.digest(device_id))
     expect(record.session_key_hash).to eq(Digest::SHA256.digest(session_key))
 
-    # The operator database stays isolated from the admin database.
+    # Operator and admin records share the primary database without changing
+    # the authentication boundary between the two flows.
     expect(AdminIdentity.count).to eq(0)
     expect(AdminDeviceSession.count).to eq(0)
 

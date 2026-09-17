@@ -1,7 +1,6 @@
 # Admin-portal endpoints for granting access to identities that have already
 # completed the operator Google sign-in. Operator identity records live in the
-# dedicated operator database, while the acting administrator is authenticated
-# by AdminAuth.
+# primary database, while the acting administrator is authenticated by AdminAuth.
 class OperatorManagementAccessesController < ApplicationController
   UUID_FORMAT = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
 
