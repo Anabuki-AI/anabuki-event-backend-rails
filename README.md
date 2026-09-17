@@ -12,7 +12,7 @@
 - 管理者の device cookie と session cookie はランダム値を HttpOnly/SameSite=Lax で発行し、DBには SHA-256 hash だけを保存します。
 - applicant request は正確な device/session pair に紐付けます。ログアウト、再ログイン、失効、管理権限取消時は未処理申請を `CANCELLED` にします。
 - `ADMIN_EMAIL_ALLOWLIST` は各認証リクエストで再評価する環境アクセスです。承認済み管理者と環境アクセスは、他者の通常管理権限だけを取消できます。自分自身と環境アクセスは取消できません。
-- 状態変更 API は `Origin` が `PUBLIC_BASE_URL` または `ADMIN_FRONTEND_URL` と同一 origin の場合だけ受け付けます（non-browser client は従来どおり Originなしで利用可能）。
+- 状態変更 API は `Origin` が `PUBLIC_BASE_URL` または `ADMIN_FRONTEND_URL` と同一 origin の場合だけ受け付けます（non-browser client は従来どおり Originなしで利用可能）。参加者・オペレーター向けAPIも同様に、それぞれ `PUBLIC_BASE_URL` / `OPERATOR_FRONTEND_URL` と同一 originのみを受け付けます。イベント当日など複数端末（参加者のスマホ等）がLAN経由の別IPでdevサーバーへアクセスする場合は、`ADDITIONAL_ALLOWED_ORIGINS`（カンマ区切りの追加許可origin。例: `http://192.168.1.50:3000,http://192.168.1.51:3000`）で単一の `PUBLIC_BASE_URL` を書き換えずに追加のoriginを許可できます。
 
 ## Punditによる管理認可
 

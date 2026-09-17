@@ -114,4 +114,11 @@ RSpec.describe "Participant registration", type: :request do
     delete "/api/participants/session", headers: headers
     expect(response).to have_http_status(:forbidden)
   end
+
+  it "accepts registration from an ADDITIONAL_ALLOWED_ORIGINS entry (event-day LAN devices)" do
+    with_env("ADDITIONAL_ALLOWED_ORIGINS" => "http://192.168.1.50:3000") do
+      post "/api/participants", params: registration, headers: { "Origin" => "http://192.168.1.50:3000" }, as: :json
+      expect(response).to have_http_status(:created)
+    end
+  end
 end

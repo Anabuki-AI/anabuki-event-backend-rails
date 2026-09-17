@@ -7,6 +7,16 @@ module Auth
   module Config
     def public_base_url = ENV.fetch("PUBLIC_BASE_URL", "http://localhost:3000")
 
+    # Extra origins allowed alongside PUBLIC_BASE_URL / ADMIN_FRONTEND_URL /
+    # OPERATOR_FRONTEND_URL, comma-separated (same convention as the email
+    # allowlists below). Event-day dev servers are reached from several
+    # participant phones over LAN Wi-Fi at once, so a single PUBLIC_BASE_URL
+    # is not enough; this lets ops add those origins without widening the
+    # check to a wildcard.
+    def additional_allowed_origins
+      ENV.fetch("ADDITIONAL_ALLOWED_ORIGINS", "").split(",").filter_map { |value| value.strip.presence }
+    end
+
     def google_client_id = ENV.fetch("GOOGLE_CLIENT_ID", "")
 
     def google_client_secret = ENV.fetch("GOOGLE_CLIENT_SECRET", "")
@@ -30,7 +40,7 @@ module Auth
       return false unless source.is_a?(URI::HTTP) && source.host.present? && source.userinfo.nil? &&
         source.path.empty? && source.query.nil? && source.fragment.nil?
 
-      allowed_urls.any? { |value| same_origin?(source, value) }
+      (allowed_urls + additional_allowed_origins).any? { |value| same_origin?(source, value) }
     rescue URI::InvalidURIError
       false
     end
