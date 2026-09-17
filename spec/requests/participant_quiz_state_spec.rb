@@ -66,6 +66,7 @@ RSpec.describe "Participant quiz state", type: :request do
     expect(response.parsed_body).to eq(
       "status" => "in_progress",
       "phase" => "answering",
+      "phase_started_at" => QuizSession.current.reload.phase_started_at.iso8601,
       "question" => {
         "question_id" => question.id,
         "position" => 1,
@@ -112,6 +113,20 @@ RSpec.describe "Participant quiz state", type: :request do
     get "/api/participant/quiz/questions/#{other.id}/image"
 
     expect(response).to have_http_status(:not_found)
+  end
+
+  it "exposes the server-started ten-second closing countdown without the correct answer" do
+    sign_in
+    QuizSession.current.start!
+    scheduled = instance_double(ActiveJob::ConfiguredJob, perform_later: true)
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(scheduled)
+    QuizSession.current.request_close!
+
+    get "/api/participant/quiz/state"
+
+    expect(response.parsed_body["phase"]).to eq("closing")
+    expect(response.parsed_body["phase_started_at"]).to eq(QuizSession.current.reload.phase_started_at.iso8601)
+    expect(response.parsed_body["correct_answer"]).to be_nil
   end
 
   it "hides the correct answer while closed" do

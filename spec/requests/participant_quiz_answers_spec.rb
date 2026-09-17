@@ -137,6 +137,35 @@ RSpec.describe "Participant quiz answers", type: :request do
     end
   end
 
+  it "keeps the original question time limit while the closing countdown runs" do
+    question.update!(time_limit_seconds: 1)
+    scheduled = instance_double(ActiveJob::ConfiguredJob, perform_later: true)
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(scheduled)
+    QuizSession.current.request_close!
+
+    travel_to(QuizSession.current.reload.answering_started_at + 2.seconds) do
+      expect {
+        submit_answer
+      }.not_to change(ParticipantAnswer, :count)
+
+      expect(response).to have_http_status(:conflict)
+      expect(QuizSession.current.reload.phase).to eq("closed")
+    end
+  end
+
+  it "continues accepting answers during the operator's ten-second closing countdown" do
+    scheduled = instance_double(ActiveJob::ConfiguredJob, perform_later: true)
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(scheduled)
+    QuizSession.current.request_close!
+
+    expect {
+      submit_answer
+    }.to change(ParticipantAnswer, :count).by(1)
+
+    expect(response).to have_http_status(:created)
+    expect(QuizSession.current.reload.phase).to eq("closing")
+  end
+
   it "rejects answers outside the answering phase with 409" do
     QuizSession.current.close!
 
