@@ -85,9 +85,9 @@ RSpec.describe "Participant quiz state", type: :request do
 
   it "exposes an attached image only through the current participant quiz route" do
     question.image.attach(
-      io: File.open(Rails.root.join("spec/fixtures/files/question.png")),
-      filename: "question.png",
-      content_type: "image/png"
+      io: File.open(Rails.root.join("spec/fixtures/files/question.webp")),
+      filename: "question.webp",
+      content_type: "image/webp"
     )
     sign_in
     QuizSession.current.start!
@@ -98,15 +98,15 @@ RSpec.describe "Participant quiz state", type: :request do
 
     get "/api#{image_url}"
     expect(response).to have_http_status(:ok)
-    expect(response.media_type).to eq("image/png")
-    expect(response.body).to eq(File.binread(Rails.root.join("spec/fixtures/files/question.png")))
+    expect(response.media_type).to eq("image/webp")
+    expect(response.body).to eq(File.binread(Rails.root.join("spec/fixtures/files/question.webp")))
   end
 
   it "does not serve an attached image for a non-current question" do
     question.image.attach(
-      io: File.open(Rails.root.join("spec/fixtures/files/question.png")),
-      filename: "question.png",
-      content_type: "image/png"
+      io: File.open(Rails.root.join("spec/fixtures/files/question.webp")),
+      filename: "question.webp",
+      content_type: "image/webp"
     )
     other = create_question(position: 2, correct_answer: "A")
     sign_in

@@ -61,7 +61,7 @@ RSpec.describe "Admin question management", type: :request do
     post "/api/admin/questions", params: question_payload.merge(
       explanation: "これは解説です",
       targetAudience: "初級者向け",
-      image: fixture_file_upload("question.png", "image/png")
+      image: fixture_file_upload("question.webp", "image/webp")
     )
     expect(response).to have_http_status(:created)
     created = response.parsed_body
@@ -70,7 +70,7 @@ RSpec.describe "Admin question management", type: :request do
 
     get "/api#{created.fetch('imageUrl')}"
     expect(response).to have_http_status(:ok)
-    expect(response.media_type).to eq("image/png")
+    expect(response.media_type).to eq("image/webp")
 
     put "/api/admin/questions/#{created.fetch('id')}", params: question_payload.merge(removeImage: "true")
     expect(response).to have_http_status(:ok)

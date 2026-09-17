@@ -132,9 +132,9 @@ RSpec.describe "Operator quiz control", type: :request do
       authenticate_operator(manager_enabled: true)
       question = create_question(position: 1)
       question.image.attach(
-        io: File.open(Rails.root.join("spec/fixtures/files/question.png")),
-        filename: "question.png",
-        content_type: "image/png"
+        io: File.open(Rails.root.join("spec/fixtures/files/question.webp")),
+        filename: "question.webp",
+        content_type: "image/webp"
       )
       QuizSession.current.start!
 
@@ -143,7 +143,7 @@ RSpec.describe "Operator quiz control", type: :request do
       expect(response.parsed_body.dig("current", "image_url")).to eq("/operator/quiz/questions/#{question.id}/image")
       get "/api/operator/quiz/questions/#{question.id}/image"
       expect(response).to have_http_status(:ok)
-      expect(response.media_type).to eq("image/png")
+      expect(response.media_type).to eq("image/webp")
     end
 
     it "returns a nil next_question on the final question" do
