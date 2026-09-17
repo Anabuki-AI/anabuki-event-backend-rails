@@ -235,6 +235,47 @@ RSpec.describe "Operator quiz control", type: :request do
     end
   end
 
+  describe "POST /api/operator/quiz/reset" do
+    it "forces the session back to waiting and clears participant answers regardless of current state" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1)
+      participant = create_participant
+      QuizSession.current.start!
+      ParticipantAnswer.create!(participant:, question:, choice: "A", confidence_level: "normal")
+
+      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["status"]).to eq("waiting")
+      expect(body["phase"]).to be_nil
+      expect(body["current"]).to be_nil
+      expect(ParticipantAnswer.count).to eq(0)
+    end
+
+    it "succeeds even from the waiting state" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+
+      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["status"]).to eq("waiting")
+    end
+
+    it "succeeds after finishing" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      QuizSession.current.start!
+      QuizSession.current.finish!
+
+      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["status"]).to eq("waiting")
+    end
+  end
+
   describe "single-row guarantee" do
     it "materializes exactly one session row regardless of access order" do
       authenticate_operator(manager_enabled: true)
