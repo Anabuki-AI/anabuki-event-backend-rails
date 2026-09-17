@@ -68,6 +68,7 @@ class ParticipantQuizController < ApplicationController
     state[:answered] = my_answer.present?
     state[:my_answer] = my_answer && my_answer_json(my_answer)
     state[:correct_answer] = quiz_session.phase == "revealed" ? quiz_session.current_question&.correct_answer : nil
+    state[:confidence_multipliers] = ConfidenceMultiplier.all_levels.transform_values { |multiplier| multiplier.confidence_multiplier.to_f }
     state
   end
 
