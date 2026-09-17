@@ -146,3 +146,51 @@ jobs:
         if: steps.main_guard.outputs.current == 'true'
         working-directory: cloudflare
         run: npx wrangler deploy --config wrangler.jsonc
+      - name: Install configured Rails Worker secrets
+        if: steps.main_guard.outputs.current == 'true'
+        working-directory: cloudflare
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPERATOR_DATABASE_URL: ${{ secrets.OPERATOR_DATABASE_URL }}
+          SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          ADMIN_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_EMAIL_ALLOWLIST }}
+          OPERATOR_EMAIL_ALLOWLIST: ${{ secrets.OPERATOR_EMAIL_ALLOWLIST }}
+          PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
+          ADMIN_FRONTEND_URL: ${{ secrets.ADMIN_FRONTEND_URL }}
+          OPERATOR_FRONTEND_URL: ${{ secrets.OPERATOR_FRONTEND_URL }}
+          GOOGLE_OAUTH_CALLBACK_URL: ${{ secrets.GOOGLE_OAUTH_CALLBACK_URL }}
+          OPERATOR_GOOGLE_OAUTH_CALLBACK_URL: ${{ secrets.OPERATOR_GOOGLE_OAUTH_CALLBACK_URL }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "${name} is not configured in the production environment; leaving the Worker secret unset."
+              return 0
+            fi
+            printf '%s' "$value" | npx wrangler secret put "$name" --config wrangler.jsonc
+          }
+
+          put_secret DATABASE_URL "$DATABASE_URL"
+          put_secret OPERATOR_DATABASE_URL "$OPERATOR_DATABASE_URL"
+          put_secret SECRET_KEY_BASE "$SECRET_KEY_BASE"
+          put_secret GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID"
+          put_secret GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET"
+          put_secret ADMIN_EMAIL_ALLOWLIST "$ADMIN_EMAIL_ALLOWLIST"
+          put_secret OPERATOR_EMAIL_ALLOWLIST "$OPERATOR_EMAIL_ALLOWLIST"
+          put_secret PUBLIC_BASE_URL "$PUBLIC_BASE_URL"
+          put_secret ADMIN_FRONTEND_URL "$ADMIN_FRONTEND_URL"
+          put_secret OPERATOR_FRONTEND_URL "$OPERATOR_FRONTEND_URL"
+          put_secret GOOGLE_OAUTH_CALLBACK_URL "$GOOGLE_OAUTH_CALLBACK_URL"
+          put_secret OPERATOR_GOOGLE_OAUTH_CALLBACK_URL "$OPERATOR_GOOGLE_OAUTH_CALLBACK_URL"
+          put_secret R2_ENDPOINT "$R2_ENDPOINT"
+          put_secret R2_BUCKET "$R2_BUCKET"
+          put_secret R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+          put_secret R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"

@@ -37,24 +37,9 @@
     "R2_REGION": "auto",
     "RAILS_MAX_THREADS": "5"
   },
-  "secrets": {
-    "required": [
-      "DATABASE_URL",
-      "OPERATOR_DATABASE_URL",
-      "SECRET_KEY_BASE",
-      "GOOGLE_CLIENT_ID",
-      "GOOGLE_CLIENT_SECRET",
-      "ADMIN_EMAIL_ALLOWLIST",
-      "OPERATOR_EMAIL_ALLOWLIST",
-      "PUBLIC_BASE_URL",
-      "ADMIN_FRONTEND_URL",
-      "OPERATOR_FRONTEND_URL",
-      "GOOGLE_OAUTH_CALLBACK_URL",
-      "OPERATOR_GOOGLE_OAUTH_CALLBACK_URL",
-      "R2_ENDPOINT",
-      "R2_BUCKET",
-      "R2_ACCESS_KEY_ID",
-      "R2_SECRET_ACCESS_KEY"
-    ]
-  }
+  // Do not declare these as `secrets.required`. Wrangler validates that list
+  // against the remote Worker during deploy, which prevents the first Worker
+  // upload before any Worker secrets can exist. The runtime guard in
+  // src/index.ts keeps an incompletely configured Worker at HTTP 503 instead
+  // of starting Rails.
 }
