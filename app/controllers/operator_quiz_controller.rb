@@ -73,10 +73,9 @@ class OperatorQuizController < ApplicationController
     }
   end
 
-  # Per-answer aggregation arrives with participant_answers; until then no
-  # answers can exist, so the rate is structurally zero.
-  def answered_count_for(_question)
-    0
+  # Per-answer aggregation reads the participant_answers table.
+  def answered_count_for(question)
+    ParticipantAnswer.where(question:).count
   end
 
   def answered_rate(answered_count, total_participants)

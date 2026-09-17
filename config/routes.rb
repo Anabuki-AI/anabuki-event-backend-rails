@@ -47,6 +47,7 @@ Rails.application.routes.draw do
     post "/operator/quiz/finish", to: "operator_quiz#finish"
 
     get "/participant/quiz/state", to: "participant_quiz#state"
+    post "/participant/quiz/answers", to: "participant_quiz#create"
 
     get "/admin/operator-identities", to: "operator_management_accesses#index"
     patch "/admin/operator-identities/:id", to: "operator_management_accesses#update"
