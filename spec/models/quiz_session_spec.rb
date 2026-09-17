@@ -28,7 +28,7 @@ RSpec.describe QuizSession do
     expect(session.reload.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:00:00"))
 
     travel_to Time.zone.parse("2026-09-20 10:00:30") do
-      session.publish!(position: second.position)
+      session.publish_next!
     end
     expect(session.reload.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:00:30"))
 
@@ -46,6 +46,18 @@ RSpec.describe QuizSession do
       session.finish!
     end
     expect(session.reload.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:02:00"))
+  end
+
+  it "marks the current question revealed and clears that history on reset" do
+    question = create_question(position: 1)
+    session = described_class.current
+    session.start!
+
+    session.reveal!
+    expect(question.reload.revealed_at).to be_present
+
+    session.reset!
+    expect(question.reload.revealed_at).to be_nil
   end
 
   it "stamps phase_started_at when reset! forces the session back to waiting" do

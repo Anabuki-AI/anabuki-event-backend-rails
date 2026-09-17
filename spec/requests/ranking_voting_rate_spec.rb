@@ -46,6 +46,17 @@ RSpec.describe "Rankings and voting rate", type: :request do
     )
   end
 
+  def reveal_all_questions
+    session = QuizSession.current
+    session.start!
+    loop do
+      session.reveal!
+      break unless session.next_question
+
+      session.publish_next!
+    end
+  end
+
   def create_participant_session(participant)
     raw_token = SecureRandom.urlsafe_base64(32, false)
     ParticipantSession.create!(
@@ -105,6 +116,7 @@ RSpec.describe "Rankings and voting rate", type: :request do
       answer(bob, question1, choice: "A", points: 0)     # wrong
       answer(carol, question1, choice: "B", points: 150)
       answer(carol, question2, choice: "B", points: 100)
+      reveal_all_questions
 
       sign_in(alice)
       get "/api/rankings"
@@ -127,6 +139,7 @@ RSpec.describe "Rankings and voting rate", type: :request do
       answer(alice, question1, choice: "B", points: 200)
       answer(bob, question1, choice: "A", points: 200)
       answer(carol, question1, choice: "A", points: 50)
+      reveal_all_questions
 
       sign_in(carol)
       get "/api/rankings"
@@ -142,6 +155,7 @@ RSpec.describe "Rankings and voting rate", type: :request do
       end
       me = create_participant("Me")
       answer(me, question1, choice: "B", points: 10)
+      reveal_all_questions
 
       sign_in(me)
       get "/api/rankings"
@@ -150,6 +164,24 @@ RSpec.describe "Rankings and voting rate", type: :request do
       expect(rankings.size).to eq(20)
       expect(rankings.last["display_name"]).to eq("Player 19")
       expect(response.parsed_body["me"]).to include("display_name" => "Me", "rank" => 26)
+    end
+
+    it "excludes answers for questions whose correct answer is not revealed" do
+      alice = create_participant("Alice")
+      answer(alice, question1, choice: "B", points: 200)
+      answer(alice, question2, choice: "B", points: 500)
+      QuizSession.current.start!
+      QuizSession.current.reveal!
+
+      sign_in(alice)
+      get "/api/rankings"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["rankings"]).to eq([
+        { "rank" => 1, "participant_id" => alice.id, "display_name" => "Alice" }
+      ])
+      expect(question1.reload.revealed_at).to be_present
+      expect(question2.reload.revealed_at).to be_nil
     end
 
     it "returns empty rankings and null me when nobody answered" do

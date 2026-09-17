@@ -17,6 +17,7 @@ x-rails-environment: &rails-environment
   SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
   SENTRY_RELEASE: ${SENTRY_RELEASE:-}
   SENTRY_ENABLED_ENVIRONMENTS: ${SENTRY_ENABLED_ENVIRONMENTS:-production}
+  ADDITIONAL_ALLOWED_ORIGINS: ${ADDITIONAL_ALLOWED_ORIGINS:-}
 
 services:
   postgres:
@@ -58,6 +59,8 @@ services:
       <<: *rails-environment
       PORT: 8080
     command: ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-p", "8080"]
+    volumes:
+      - rails-storage-data:/app/storage
     depends_on:
       db-prepare:
         condition: service_completed_successfully
@@ -68,6 +71,8 @@ services:
       target: development
     image: anabuki-event-backend-rails
     environment: *rails-environment
+    volumes:
+      - rails-storage-data:/app/storage
     command:
       - bundle
       - exec
@@ -92,3 +97,4 @@ services:
 
 volumes:
   rails-postgres-data:
+  rails-storage-data:

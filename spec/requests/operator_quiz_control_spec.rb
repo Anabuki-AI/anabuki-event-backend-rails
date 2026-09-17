@@ -2,8 +2,11 @@ require "rails_helper"
 
 RSpec.describe "Operator quiz control", type: :request do
   around do |example|
-    host! "localhost"
-    example.run
+    with_env("PUBLIC_BASE_URL" => "https://event.example", "OPERATOR_FRONTEND_URL" => "https://event.example/operator") do
+      host! "event.example"
+      https!
+      example.run
+    end
   end
 
   before do
@@ -117,6 +120,24 @@ RSpec.describe "Operator quiz control", type: :request do
       )
     end
 
+    it "exposes attached images through the scoped operator quiz route" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1)
+      question.image.attach(
+        io: File.open(Rails.root.join("spec/fixtures/files/question.png")),
+        filename: "question.png",
+        content_type: "image/png"
+      )
+      QuizSession.current.start!
+
+      get "/api/operator/quiz/state"
+
+      expect(response.parsed_body.dig("current", "image_url")).to eq("/operator/quiz/questions/#{question.id}/image")
+      get "/api/operator/quiz/questions/#{question.id}/image"
+      expect(response).to have_http_status(:ok)
+      expect(response.media_type).to eq("image/png")
+    end
+
     it "returns a nil next_question on the final question" do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
@@ -162,17 +183,47 @@ RSpec.describe "Operator quiz control", type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
     end
+
+    it "accepts the configured admin origin for an admin management session" do
+      authenticate_admin
+      create_question(position: 1)
+
+      post "/api/operator/quiz/start", headers: { "Origin" => "http://localhost:3000" }, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["phase"]).to eq("answering")
+    end
+
+    it "requires the configured origin for every state-changing action" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      bad_headers = { "Origin" => "https://untrusted.example.invalid" }
+
+      post "/api/operator/quiz/start", headers: bad_headers, as: :json
+      expect(response).to have_http_status(:forbidden)
+      post "/api/operator/quiz/publish", headers: bad_headers, as: :json
+      expect(response).to have_http_status(:forbidden)
+      post "/api/operator/quiz/close", headers: bad_headers, as: :json
+      expect(response).to have_http_status(:forbidden)
+      post "/api/operator/quiz/reveal", headers: bad_headers, as: :json
+      expect(response).to have_http_status(:forbidden)
+      post "/api/operator/quiz/finish", headers: bad_headers, as: :json
+      expect(response).to have_http_status(:forbidden)
+      post "/api/operator/quiz/reset", headers: bad_headers, as: :json
+      expect(response).to have_http_status(:forbidden)
+      expect(QuizSession.current.status).to eq("waiting")
+    end
   end
 
   describe "POST /api/operator/quiz/publish" do
-    it "publishes the requested position and resets the phase to answering" do
+    it "publishes the next real question and resets the phase to answering" do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
       second = create_question(position: 2)
       QuizSession.current.start!
       QuizSession.current.close!
 
-      post "/api/operator/quiz/publish", params: { position: 2 }, headers: operator_headers, as: :json
+      post "/api/operator/quiz/publish", headers: operator_headers, as: :json
 
       expect(response).to have_http_status(:ok)
       body = response.parsed_body
@@ -180,12 +231,29 @@ RSpec.describe "Operator quiz control", type: :request do
       expect(body["current"]["question_id"]).to eq(second.id)
     end
 
-    it "rejects an unknown position with 422" do
+    it "selects the next real position when a question was deleted" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      deleted = create_question(position: 2)
+      third = create_question(position: 3)
+      deleted.destroy!
+      QuizSession.current.start!
+      QuizSession.current.reveal!
+
+      post "/api/operator/quiz/publish", headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["current"].slice("question_id", "position")).to eq(
+        "question_id" => third.id, "position" => 3
+      )
+    end
+
+    it "rejects publish when there are no more questions" do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
       QuizSession.current.start!
 
-      post "/api/operator/quiz/publish", params: { position: 99 }, headers: operator_headers, as: :json
+      post "/api/operator/quiz/publish", headers: operator_headers, as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
     end
@@ -194,17 +262,9 @@ RSpec.describe "Operator quiz control", type: :request do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
 
-      post "/api/operator/quiz/publish", params: { position: 1 }, headers: operator_headers, as: :json
+      post "/api/operator/quiz/publish", headers: operator_headers, as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
-    end
-
-    it "rejects a missing position with 400" do
-      authenticate_operator(manager_enabled: true)
-
-      post "/api/operator/quiz/publish", params: {}, headers: operator_headers, as: :json
-
-      expect(response).to have_http_status(:bad_request)
     end
   end
 
@@ -319,6 +379,22 @@ RSpec.describe "Operator quiz control", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["status"]).to eq("waiting")
+    end
+
+    it "rejects reset outside development and test environments without mutating state" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1)
+      participant = create_participant
+      QuizSession.current.start!
+      ParticipantAnswer.create!(participant:, question:, choice: "A", confidence_level: "normal")
+      allow(Rails.env).to receive(:development?).and_return(false)
+      allow(Rails.env).to receive(:test?).and_return(false)
+
+      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(QuizSession.current.reload.status).to eq("in_progress")
+      expect(ParticipantAnswer.count).to eq(1)
     end
   end
 

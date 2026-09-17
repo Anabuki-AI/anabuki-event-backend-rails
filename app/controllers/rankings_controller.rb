@@ -36,7 +36,8 @@ class RankingsController < ApplicationController
   # skips (1, 2, 2, 4...). Participants without answers are unranked.
   def ranked_entries
     rows = ParticipantAnswer
-      .joins(:participant)
+      .joins(:participant, :question)
+      .where.not(questions: { revealed_at: nil })
       .group("participants.id", "participants.display_name")
       .order(Arel.sql("SUM(participant_answers.awarded_points) DESC"), "participants.id")
       .pluck("participants.id", "participants.display_name", "SUM(participant_answers.awarded_points) AS total_points")

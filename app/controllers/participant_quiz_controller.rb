@@ -11,41 +11,35 @@ class ParticipantQuizController < ApplicationController
   end
 
   def create
-    quiz_session = QuizSession.current
-    question = quiz_session.current_question
-
-    unless answer_window_open?(quiz_session, question)
-      return render_error(ANSWER_WINDOW_ERROR, :conflict)
-    end
-
     multipliers = ConfidenceMultiplier.all_levels
     unless multipliers.key?(params[:confidence_level])
       return render_error("confidence_level is invalid", :unprocessable_content)
     end
 
-    answer = ParticipantAnswer.record!(
+    answer = QuizSession.current.record_answer!(
       participant: current_participant,
-      question:,
+      question_id: params[:question_id],
       choice: params[:choice],
       confidence_level: params[:confidence_level]
     )
 
     render json: { answered: true, my_answer: my_answer_json(answer) }, status: :created
+  rescue QuizSession::InvalidTransition => error
+    render_error(error.message.presence || ANSWER_WINDOW_ERROR, :conflict)
   rescue ActiveRecord::RecordInvalid => error
     render_error(error.record.errors.full_messages.to_sentence, :unprocessable_content)
   end
 
+  def image
+    quiz_session = QuizSession.current
+    question = Question.find(params[:id])
+    return head :not_found unless quiz_session.status == "in_progress" && quiz_session.current_question&.id == question.id
+
+    render_attached_question_image(question)
+  end
+
   private
 
-  # Answers are only accepted while the current question is in the answering
-  # phase; anything else (closed, revealed, wrong question, waiting/finished)
-  # is a 409 per the contract.
-  def answer_window_open?(quiz_session, question)
-    quiz_session.status == "in_progress" &&
-      quiz_session.phase == "answering" &&
-      question.present? &&
-      question.id == params[:question_id].to_i
-  end
 
   def require_participant_session!
     current_participant
@@ -82,6 +76,12 @@ class ParticipantQuizController < ApplicationController
     { choice: answer.choice, confidence_level: answer.confidence_level }
   end
 
+  def question_image_url(question)
+    return "/participant/quiz/questions/#{question.id}/image" if question.image.attached?
+
+    question.image_url
+  end
+
   def question_json(question)
     {
       question_id: question.id,
@@ -93,7 +93,7 @@ class ParticipantQuizController < ApplicationController
         "C" => question.choice_c,
         "D" => question.choice_d
       },
-      image_url: question.image_url
+      image_url: question_image_url(question)
     }
   end
 end
