@@ -33,6 +33,20 @@ class ApplicationController < ActionController::API
     raise AdminAuthError.new(message, :forbidden)
   end
 
+  # Event-operation APIs accept either an AdminAuth management session or an
+  # OperatorAuth manager session. Admin access deliberately does not depend on
+  # a second operator cookie, while operator-only users retain full access to
+  # the operational screens.
+  def authorize_event_operator!
+    admin_auth.management_session!("MANAGEMENT_PAGE_VIEW")
+  rescue AdminAuthError => admin_error
+    begin
+      operator_auth.manager_session!
+    rescue OperatorAuthError
+      raise admin_error
+    end
+  end
+
   def render_error(message, status)
     render json: { error: message }, status: status
   end

@@ -1,12 +1,12 @@
 class AdminConfidenceMultipliersController < ApplicationController
   def index
-    authorize_admin!(ConfidenceMultiplier, :index?)
+    authorize_event_operator!
     render json: multipliers_json(ConfidenceMultiplier.all_levels)
   end
 
   def update
     require_same_origin!
-    authorize_admin!(ConfidenceMultiplier, :update?)
+    authorize_event_operator!
 
     level = params[:level].to_s
     unless ConfidenceMultiplier::LEVELS.include?(level)
