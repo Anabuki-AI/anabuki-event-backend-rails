@@ -96,12 +96,13 @@ bundle exec rails zeitwerk:check
 # docker compose --env-file .env up --build
 ```
 
-API: `http://localhost:8080`、health check: `GET /health`。
+API: `http://localhost:8080`、container health check: `GET /health`。
 
 主なAPI:
 
 ```text
 GET  /health
+GET  /api/health
 POST /api/participants
 GET  /api/participants/me
 POST /api/participants/presence

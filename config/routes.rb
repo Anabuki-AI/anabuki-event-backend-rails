@@ -2,6 +2,8 @@ Rails.application.routes.draw do
   get "/health", to: "health#show"
 
   scope "/api" do
+    get "/health", to: "health#show"
+
     post "/participants", to: "participants#create"
     get "/participants/me", to: "participants#me"
     post "/participants/presence", to: "participants#presence"

@@ -8,6 +8,13 @@ RSpec.describe "API contract", type: :request do
     expect(response.parsed_body).to eq("status" => "ok")
   end
 
+  it "serves the health contract through the API prefix" do
+    get "/api/health"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to eq("status" => "ok")
+  end
+
   it "requires an authenticated session for the management queue" do
     get "/api/admin/access-requests"
 
