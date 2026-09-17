@@ -72,6 +72,7 @@ class OperatorQuizController < ApplicationController
       status: quiz_session.status,
       phase: quiz_session.phase,
       phase_started_at: quiz_session.phase_started_at&.iso8601,
+      finished_elapsed_seconds: quiz_session.finished_elapsed_seconds,
       current: current_question && current_question_json(current_question),
       next_question: current_question && next_question_json,
       question_count: Question.count,

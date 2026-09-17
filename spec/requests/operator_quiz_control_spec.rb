@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe "Operator quiz control", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   around do |example|
     with_env(
       "PUBLIC_BASE_URL" => "https://event.example",
@@ -56,6 +58,7 @@ RSpec.describe "Operator quiz control", type: :request do
         "status" => "waiting",
         "phase" => nil,
         "phase_started_at" => nil,
+        "finished_elapsed_seconds" => nil,
         "current" => nil,
         "next_question" => nil,
         "question_count" => 1,
@@ -80,6 +83,7 @@ RSpec.describe "Operator quiz control", type: :request do
         "total_participants" => 1
       )
       expect(body["phase_started_at"]).to be_present
+      expect(body["finished_elapsed_seconds"]).to be_nil
       expect(Time.iso8601(body["phase_started_at"])).to be_within(5.seconds).of(Time.current)
       expect(body["current"]).to eq(
         "question_id" => question.id,
@@ -326,18 +330,27 @@ RSpec.describe "Operator quiz control", type: :request do
   end
 
   describe "POST /api/operator/quiz/finish" do
-    it "finishes from in_progress and clears the current question" do
+    it "finishes from in_progress and keeps the final elapsed seconds across later reads" do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
-      QuizSession.current.start!
+      started_at = Time.current.change(usec: 0)
+      travel_to(started_at) { QuizSession.current.start! }
 
-      post "/api/operator/quiz/finish", headers: operator_headers, as: :json
+      travel_to(started_at + 7.seconds) do
+        post "/api/operator/quiz/finish", headers: operator_headers, as: :json
+      end
 
       expect(response).to have_http_status(:ok)
       body = response.parsed_body
       expect(body["status"]).to eq("finished")
       expect(body["phase"]).to be_nil
       expect(body["current"]).to be_nil
+      expect(body["finished_elapsed_seconds"]).to eq(7)
+
+      travel_to(started_at + 10.minutes) do
+        get "/api/operator/quiz/state"
+      end
+      expect(response.parsed_body["finished_elapsed_seconds"]).to eq(7)
     end
 
     it "rejects a double finish with 422" do
@@ -398,6 +411,7 @@ RSpec.describe "Operator quiz control", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["status"]).to eq("waiting")
+      expect(response.parsed_body["finished_elapsed_seconds"]).to be_nil
     end
 
     it "rejects reset outside development and test environments without mutating state" do
