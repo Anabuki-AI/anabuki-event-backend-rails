@@ -65,6 +65,10 @@ All states are explicit. `unconfigured`, `error`, `unavailable`, and `not_provid
 
 `statuspage.availability.value` is one of `operational`, `degraded`, `partial_outage`, `major_outage`, or `unknown`. A provider `state` is one of `available`, `partial`, `unconfigured`, or `error`. A metric state is one of `available`, `unconfigured`, `unavailable` (successful upstream response but no sample), `error`, or `not_provided`.
 
+When both configured Datadog queries succeed but contain no samples, each metric is `unavailable` with a `no_data` issue while the aggregate provider state remains `unconfigured`. This is pinned compatibility behavior pending explicit provider-state contract agreement; clients must use the per-metric states and must not infer that this aggregate state proves missing configuration.
+
+Finite Datadog values currently pass through without semantic range validation: an error-rate value outside `0..100` or a negative response time remains `available`. **TODO:** agree whether a future contract revision rejects or classifies those values. Do not silently clamp them.
+
 ## Provider setup
 
 All values are local/deployment environment variables. Do not commit keys or metric queries.
@@ -90,4 +94,4 @@ Use an app key with only the metrics-query permission and an API key scoped to t
 
 ## Operational behavior
 
-External connections are HTTPS-only, have 3-second connect and 5-second read/write timeouts, and convert non-2xx responses, parse failures, and network failures to generic `upstream_error` objects. This avoids leaking provider details and leaves the UI with a stable, non-healthy state when integrations are absent or unavailable.
+External connections are HTTPS-only, have 3-second connect and 5-second read/write timeouts, and convert non-2xx responses, parse failures, network failures, and TLS/certificate failures to generic `upstream_error` objects. TLS exception class/message details are not returned. This avoids leaking provider details and leaves the UI with a stable, non-healthy state when integrations are absent or unavailable; a failed provider does not prevent another provider's result from being returned.

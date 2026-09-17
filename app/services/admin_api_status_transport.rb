@@ -1,5 +1,6 @@
 require "json"
 require "net/http"
+require "openssl"
 require "uri"
 
 # Small, injectable HTTP boundary for monitoring providers. It never logs
@@ -22,7 +23,7 @@ class AdminApiStatusTransport
 
     response = http.request(request)
     Response.new(response.code.to_i, response.body.to_s)
-  rescue URI::InvalidURIError, SocketError, Timeout::Error, Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, IOError, SystemCallError => error
+  rescue URI::InvalidURIError, SocketError, Timeout::Error, Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, OpenSSL::SSL::SSLError, IOError, SystemCallError => error
     raise Error, error.class.name
   end
 
