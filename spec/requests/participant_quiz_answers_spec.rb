@@ -169,18 +169,61 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(ParticipantAnswer.sole.awarded_points).to eq(0)
   end
 
-  it "does not allow a recorded answer to be changed, while accepting an identical retry" do
+  it "allows a submitted answer to be replaced before the answer window closes" do
+    confirm_confidence("high")
+    submit_answer(choice: "B")
+    answer = ParticipantAnswer.sole
+
+    expect {
+      submit_answer(choice: "A")
+    }.not_to change(ParticipantAnswer, :count)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to eq(
+      "answered" => true,
+      "my_answer" => { "choice" => "A", "confidence_level" => "high" }
+    )
+    expect(answer.reload).to have_attributes(choice: "A", confidence_level: "high", awarded_points: -50)
+  end
+
+  it "keeps the locked confidence and Lv.1 elimination when replacing an answer" do
+    confirm_confidence("low")
+    eliminated_choice = ParticipantQuizConfidenceSelection.sole.eliminated_choice
+    replacement = (%w[A B C D] - [ eliminated_choice ]).first
+    submit_answer(choice: replacement)
+    selection = ParticipantQuizConfidenceSelection.sole
+
+    replacement = (%w[A B C D] - [ eliminated_choice, replacement ]).first
+    submit_answer(choice: replacement)
+
+    expect(response).to have_http_status(:ok)
+    expect(ParticipantQuizConfidenceSelection.sole).to have_attributes(
+      confidence_level: "low", eliminated_choice: selection.eliminated_choice
+    )
+    expect(ParticipantAnswer.sole).to have_attributes(choice: replacement, confidence_level: "low")
+  end
+
+  it "accepts an identical retry without creating another answer" do
     confirm_confidence("high")
     submit_answer(choice: "B")
 
     expect {
       submit_answer(choice: "B")
     }.not_to change(ParticipantAnswer, :count)
-    expect(response).to have_http_status(:created)
+    expect(response).to have_http_status(:ok)
+    expect(ParticipantAnswer.sole).to have_attributes(choice: "B", confidence_level: "high", awarded_points: 200)
+  end
+
+  it "does not replace the answer after the server closes the window" do
+    confirm_confidence("high")
+    submit_answer(choice: "B")
+    answer = ParticipantAnswer.sole
+    QuizSession.current.close!
 
     submit_answer(choice: "A")
+
     expect(response).to have_http_status(:conflict)
-    expect(ParticipantAnswer.sole).to have_attributes(choice: "B", confidence_level: "high", awarded_points: 200)
+    expect(answer.reload).to have_attributes(choice: "B", confidence_level: "high", awarded_points: 200)
   end
 
   it "reports the locked level and my_answer in the state endpoint" do

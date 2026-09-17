@@ -39,7 +39,8 @@ class ParticipantQuizController < ApplicationController
       choice: params[:choice]
     )
 
-    render json: { answered: true, my_answer: my_answer_json(answer) }, status: :created
+    status = answer.previously_new_record? ? :created : :ok
+    render json: { answered: true, my_answer: my_answer_json(answer) }, status:
   rescue QuizSession::InvalidTransition, ParticipantAnswer::AlreadyRecorded => error
     render_error(error.message.presence || ANSWER_WINDOW_ERROR, :conflict)
   rescue ActiveRecord::RecordInvalid => error
