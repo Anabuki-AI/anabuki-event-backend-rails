@@ -38,9 +38,10 @@ RSpec.describe "Participant waiting presence", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.headers.fetch("Cache-Control")).to eq("no-store")
-    expect(response.parsed_body).to have_attributes(size: 3)
+    expect(response.parsed_body).to have_attributes(size: 4)
     expect(response.parsed_body).to include(
       "activeParticipantCount" => 2,
+      "totalParticipantCount" => 5,
       "activeWindowSeconds" => 75
     )
     expect(response.parsed_body.fetch("observedAt")).to match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/)

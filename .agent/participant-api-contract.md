@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `POST` | `/api/participants` | UUID参加者を作成し、セッションcookieを発行する |
 | `GET` | `/api/participants/me` | cookieから現在の参加者を返す |
-| `POST` | `/api/participants/presence` | 現在のセッションの待機heartbeatを記録し、待機中の参加者数だけを返す |
+| `POST` | `/api/participants/presence` | 現在のセッションの待機heartbeatを記録し、待機中人数と登録総人数を返す |
 | `POST` | `/api/participants/reactions` | 現在のセッションに紐づく待機画面リアクションイベントを記録する |
 | `DELETE` | `/api/participants/session` | 現cookieに対応するセッションをrevokeし、cookieを削除する |
 
@@ -53,6 +53,7 @@
 ```json
 {
   "activeParticipantCount": 42,
+  "totalParticipantCount": 100,
   "observedAt": "2026-09-30T12:00:00Z",
   "activeWindowSeconds": 75
 }
