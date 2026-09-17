@@ -106,10 +106,10 @@ RSpec.describe Question do
     expect(question).not_to be_valid
     expect(question.errors).to include(:image)
 
-    question.image.attach(io: StringIO.new("\x89PNG\r\n\x1a\n".b), filename: "question.png", content_type: "image/png")
+    question.image.attach(io: StringIO.new("RIFFWEBP".b), filename: "question.webp", content_type: "image/webp")
     expect(question).to be_valid
 
-    question.image.attach(io: StringIO.new("x" * (described_class::MAX_IMAGE_BYTE_SIZE + 1)), filename: "big.png", content_type: "image/png")
+    question.image.attach(io: StringIO.new("x" * (described_class::MAX_IMAGE_BYTE_SIZE + 1)), filename: "big.webp", content_type: "image/webp")
     expect(question).not_to be_valid
     expect(question.errors).to include(:image)
   end
