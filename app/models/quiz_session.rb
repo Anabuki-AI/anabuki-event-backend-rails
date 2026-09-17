@@ -27,7 +27,7 @@ class QuizSession < ApplicationRecord
       question = Question.order(:position).first
       raise InvalidTransition, "No questions are registered" unless question
 
-      update!(status: "in_progress", current_question: question, phase: "answering")
+      update!(status: "in_progress", current_question: question, phase: "answering", phase_started_at: Time.current)
     end
   end
 
@@ -39,7 +39,7 @@ class QuizSession < ApplicationRecord
       question = Question.find_by(position: position)
       raise InvalidTransition, "Question with position #{position} does not exist" unless question
 
-      update!(current_question: question, phase: "answering")
+      update!(current_question: question, phase: "answering", phase_started_at: Time.current)
     end
   end
 
@@ -49,7 +49,7 @@ class QuizSession < ApplicationRecord
       require_status!("in_progress", "Quiz is not in progress")
       require_phase!("answering", "Answers are already closed")
 
-      update!(phase: "closed")
+      update!(phase: "closed", phase_started_at: Time.current)
     end
   end
 
@@ -61,7 +61,7 @@ class QuizSession < ApplicationRecord
         raise InvalidTransition, "Answer is already revealed"
       end
 
-      update!(phase: "revealed")
+      update!(phase: "revealed", phase_started_at: Time.current)
     end
   end
 
@@ -70,7 +70,7 @@ class QuizSession < ApplicationRecord
       lock!
       require_status_not_finished!
 
-      update!(status: "finished", current_question: nil, phase: nil)
+      update!(status: "finished", current_question: nil, phase: nil, phase_started_at: Time.current)
     end
   end
 
@@ -80,7 +80,7 @@ class QuizSession < ApplicationRecord
   def reset!
     transaction do
       lock!
-      update!(status: "waiting", current_question: nil, phase: nil)
+      update!(status: "waiting", current_question: nil, phase: nil, phase_started_at: Time.current)
     end
   end
 

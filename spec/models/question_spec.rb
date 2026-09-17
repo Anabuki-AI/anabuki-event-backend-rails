@@ -83,6 +83,22 @@ RSpec.describe Question do
     expect(question.errors).to include(:explanation, :target_audience)
   end
 
+  it "allows a nil time_limit_seconds (no timer) and rejects non-positive values" do
+    untimed = described_class.new(valid_attributes.merge(time_limit_seconds: nil))
+    expect(untimed).to be_valid
+
+    timed = described_class.new(valid_attributes.merge(position: 2, time_limit_seconds: 30))
+    expect(timed).to be_valid
+
+    zero = described_class.new(valid_attributes.merge(position: 3, time_limit_seconds: 0))
+    expect(zero).not_to be_valid
+    expect(zero.errors).to include(:time_limit_seconds)
+
+    fractional = described_class.new(valid_attributes.merge(position: 4, time_limit_seconds: 1.5))
+    expect(fractional).not_to be_valid
+    expect(fractional.errors).to include(:time_limit_seconds)
+  end
+
   it "validates an attached image's content type and size" do
     question = described_class.new(valid_attributes.merge(position: 99))
     question.image.attach(io: StringIO.new("not an image"), filename: "notes.txt", content_type: "text/plain")

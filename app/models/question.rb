@@ -11,6 +11,7 @@ class Question < ApplicationRecord
   POSITION_LOCK_KEY = 6_813_271_904
   MIN_POINTS = 1
   MAX_POINTS = 1000
+  MAX_TIME_LIMIT_SECONDS = 2_147_483_647
 
   has_one_attached :image
 
@@ -23,6 +24,8 @@ class Question < ApplicationRecord
   validates :image_url, length: { maximum: MAX_IMAGE_URL_LENGTH }, allow_nil: true
   validates :explanation, length: { maximum: MAX_EXPLANATION_LENGTH }, allow_nil: true
   validates :target_audience, length: { maximum: MAX_TARGET_AUDIENCE_LENGTH }, allow_nil: true
+  validates :time_limit_seconds,
+    numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: MAX_TIME_LIMIT_SECONDS }, allow_nil: true
   validate :image_url_is_http_url
   validate :image_is_valid_upload
 

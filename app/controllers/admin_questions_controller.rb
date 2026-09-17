@@ -11,7 +11,8 @@ class AdminQuestionsController < ApplicationController
     explanation: "explanation",
     target_audience: "targetAudience",
     position: "position",
-    points: "points"
+    points: "points",
+    time_limit_seconds: "timeLimitSeconds"
   }.freeze
 
   def index
@@ -101,6 +102,7 @@ class AdminQuestionsController < ApplicationController
     attributes[:explanation] = parameter_value(:explanation) if parameter_provided?(:explanation)
     attributes[:target_audience] = parameter_value(:targetAudience, :target_audience) if parameter_provided?(:targetAudience, :target_audience)
     attributes[:points] = Integer(parameter_value(:points)) if points_provided?
+    attributes[:time_limit_seconds] = parsed_time_limit_seconds if time_limit_seconds_provided?
     attributes
   end
 
@@ -140,6 +142,27 @@ class AdminQuestionsController < ApplicationController
     value.strip.match?(/\A-?\d+\z/)
   end
 
+  def time_limit_seconds_provided?
+    params.key?(:timeLimitSeconds) || params.key?(:time_limit_seconds)
+  end
+
+  # nil (or a blank string, which forms submit for an emptied field) clears
+  # the per-question timer; multipart submissions arrive as numeric strings.
+  def parsed_time_limit_seconds
+    value = parameter_value(:timeLimitSeconds, :time_limit_seconds)
+    return nil if value.nil? || (value.is_a?(String) && value.strip.empty?)
+
+    value.is_a?(String) ? Integer(value, 10) : value
+  end
+
+  def time_limit_seconds_parameter_valid?(value)
+    return true if value.nil? || value.is_a?(Integer)
+    return false unless value.is_a?(String)
+
+    stripped = value.strip
+    stripped.empty? || stripped.match?(/\A\d+\z/)
+  end
+
   def render_question_parameter_type_errors
     field_errors = question_parameter_type_errors
     return false if field_errors.empty?
@@ -166,6 +189,11 @@ class AdminQuestionsController < ApplicationController
     end
 
     errors["points"] = "must be a whole number" if points_provided? && !points_parameter_valid?(parameter_value(:points))
+
+    if time_limit_seconds_provided? && !time_limit_seconds_parameter_valid?(parameter_value(:timeLimitSeconds, :time_limit_seconds))
+      errors["timeLimitSeconds"] = "must be a whole number or null"
+    end
+
     errors
   end
 
@@ -191,6 +219,7 @@ class AdminQuestionsController < ApplicationController
       explanation: question.explanation,
       targetAudience: question.target_audience,
       points: question.points,
+      timeLimitSeconds: question.time_limit_seconds,
       createdAt: question.created_at.iso8601,
       updatedAt: question.updated_at.iso8601
     }

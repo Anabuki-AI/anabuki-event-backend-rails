@@ -190,6 +190,72 @@ RSpec.describe "Admin question management", type: :request do
     expect(response.parsed_body.fetch("points")).to eq(75)
   end
 
+  it "creates and updates a question's time_limit_seconds, treating it as optional and nullable" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post_question(question_payload.merge(timeLimitSeconds: nil))
+    expect(response).to have_http_status(:created)
+    untimed = response.parsed_body
+    expect(untimed.fetch("timeLimitSeconds")).to be_nil
+
+    put "/api/admin/questions/#{untimed.fetch('id')}", params: question_payload.merge(timeLimitSeconds: 30), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("timeLimitSeconds")).to eq(30)
+
+    put "/api/admin/questions/#{untimed.fetch('id')}", params: question_payload.merge(timeLimitSeconds: nil), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("timeLimitSeconds")).to be_nil
+
+    put "/api/admin/questions/#{untimed.fetch('id')}", params: question_payload.merge(timeLimitSeconds: 0), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("timeLimitSeconds")
+
+    put "/api/admin/questions/#{untimed.fetch('id')}", params: question_payload.merge(timeLimitSeconds: "not-a-number"), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to eq("timeLimitSeconds" => "must be a whole number or null")
+
+    put "/api/admin/questions/#{untimed.fetch('id')}", params: question_payload.merge(timeLimitSeconds: { nested: "object" }), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to eq("timeLimitSeconds" => "must be a whole number or null")
+
+    # multipart submissions (used when uploading an image) send it as a numeric string.
+    post "/api/admin/questions", params: question_payload.merge(timeLimitSeconds: "045")
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.fetch("timeLimitSeconds")).to eq(45)
+
+    # omitting the field entirely on create leaves it at its nullable default.
+    post_question(question_payload)
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.fetch("timeLimitSeconds")).to be_nil
+  end
+
+  it "preserves an omitted timer on update and clears a blank multipart timer" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    post_question(question_payload.merge(timeLimitSeconds: 30))
+    question_id = response.parsed_body.fetch("id")
+
+    put "/api/admin/questions/#{question_id}", params: question_payload, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("timeLimitSeconds")).to eq(30)
+
+    put "/api/admin/questions/#{question_id}", params: question_payload.merge(timeLimitSeconds: " ")
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("timeLimitSeconds")).to be_nil
+  end
+
+  it "rejects invalid timer types and values outside the database integer range" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    post_question(question_payload.merge(timeLimitSeconds: 30))
+    question_id = response.parsed_body.fetch("id")
+
+    [ true, [], 1.5, -1, 0, Question::MAX_TIME_LIMIT_SECONDS + 1 ].each do |invalid|
+      put "/api/admin/questions/#{question_id}", params: question_payload.merge(timeLimitSeconds: invalid), as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("fieldErrors")).to include("timeLimitSeconds")
+      expect(Question.find(question_id).time_limit_seconds).to eq(30)
+    end
+  end
+
   it "enforces same-origin protection and permits PUT/PATCH CORS preflight" do
     authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
 

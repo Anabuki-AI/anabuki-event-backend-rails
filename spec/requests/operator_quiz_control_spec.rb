@@ -48,7 +48,9 @@ RSpec.describe "Operator quiz control", type: :request do
       expect(response.parsed_body).to eq(
         "status" => "waiting",
         "phase" => nil,
+        "phase_started_at" => nil,
         "current" => nil,
+        "next_question" => nil,
         "question_count" => 1,
         "total_participants" => 0
       )
@@ -56,7 +58,7 @@ RSpec.describe "Operator quiz control", type: :request do
 
     it "returns the current question with operator-only fields while in progress" do
       authenticate_operator(manager_enabled: true)
-      question = create_question(position: 1, correct_answer: "B")
+      question = create_question(position: 1, correct_answer: "B", time_limit_seconds: 30)
       create_participant
       QuizSession.current.start!
 
@@ -70,6 +72,8 @@ RSpec.describe "Operator quiz control", type: :request do
         "question_count" => 1,
         "total_participants" => 1
       )
+      expect(body["phase_started_at"]).to be_present
+      expect(Time.iso8601(body["phase_started_at"])).to be_within(5.seconds).of(Time.current)
       expect(body["current"]).to eq(
         "question_id" => question.id,
         "position" => 1,
@@ -77,9 +81,51 @@ RSpec.describe "Operator quiz control", type: :request do
         "choices" => { "A" => "choice A", "B" => "choice B", "C" => "choice C", "D" => "choice D" },
         "image_url" => nil,
         "correct_answer" => "B",
+        "time_limit_seconds" => 30,
         "answered_count" => 0,
         "answered_rate" => 0.0
       )
+      expect(body["next_question"]).to be_nil
+    end
+
+    it "supports a nil time_limit_seconds (no timer) for backward compatibility" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      QuizSession.current.start!
+
+      get "/api/operator/quiz/state"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["current"]["time_limit_seconds"]).to be_nil
+    end
+
+    it "includes a next_question preview without the correct answer when a next question exists" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      second = create_question(position: 2, correct_answer: "C")
+      QuizSession.current.start!
+
+      get "/api/operator/quiz/state"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["next_question"]).to eq(
+        "question_id" => second.id,
+        "position" => 2,
+        "question_text" => "Question 2",
+        "choices" => { "A" => "choice A", "B" => "choice B", "C" => "choice C", "D" => "choice D" },
+        "image_url" => nil
+      )
+    end
+
+    it "returns a nil next_question on the final question" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      QuizSession.current.start!
+
+      get "/api/operator/quiz/state"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["next_question"]).to be_nil
     end
   end
 
@@ -290,7 +336,7 @@ RSpec.describe "Operator quiz control", type: :request do
 
   private
 
-  def create_question(position:, correct_answer: "A")
+  def create_question(position:, correct_answer: "A", time_limit_seconds: nil)
     Question.create!(
       position:,
       question_text: "Question #{position}",
@@ -298,7 +344,8 @@ RSpec.describe "Operator quiz control", type: :request do
       choice_b: "choice B",
       choice_c: "choice C",
       choice_d: "choice D",
-      correct_answer:
+      correct_answer:,
+      time_limit_seconds:
     )
   end
 
