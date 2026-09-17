@@ -5,13 +5,16 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# Do not cancel a run that may already be deploying production. The deploy
+# job has its own non-canceling production lock below.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -51,7 +54,26 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - name: Skip parent update for a stale main commit
+        id: main_guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          latest_main_sha=$(curl --fail-with-body --silent --show-error \
+            --url "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" | jq --raw-output '.object.sha')
+          if [ "$EXPECTED_SHA" = "$latest_main_sha" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "${EXPECTED_SHA} is no longer the tip of main; skipping parent update."
+          fi
       - name: Dispatch successful Rails main commit
+        if: steps.main_guard.outputs.current == 'true'
         env:
           PARENT_REPOSITORY_TOKEN: ${{ secrets.PARENT_REPOSITORY_TOKEN }}
           SHA: ${{ github.sha }}
@@ -67,3 +89,60 @@ jobs:
             --header "Authorization: Bearer ${PARENT_REPOSITORY_TOKEN}" \
             --header "X-GitHub-Api-Version: 2022-11-28" \
             --data "{\"event_type\":\"submodule-main-succeeded\",\"client_payload\":{\"repository\":\"Anabuki-AI/anabuki-event-backend-rails\",\"sha\":\"${SHA}\"}}"
+
+  deploy-production:
+    name: Deploy Rails Container to Cloudflare
+    needs: check
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: cloudflare-backend-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+      - name: Guard against deploying an old main commit
+        id: main_guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          latest_main_sha=$(curl --fail-with-body --silent --show-error \
+            --url "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" | jq --raw-output '.object.sha')
+          if [ "$EXPECTED_SHA" = "$latest_main_sha" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "${EXPECTED_SHA} is no longer the tip of main; skipping deployment."
+          fi
+      - name: Validate Cloudflare deployment credentials
+        if: steps.main_guard.outputs.current == 'true'
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
+      - name: Install Wrangler and Containers SDK
+        if: steps.main_guard.outputs.current == 'true'
+        working-directory: cloudflare
+        run: npm ci
+      - name: Confirm Docker is available for the Container image
+        if: steps.main_guard.outputs.current == 'true'
+        run: docker info
+      - name: Deploy Worker and Rails Container
+        if: steps.main_guard.outputs.current == 'true'
+        working-directory: cloudflare
+        run: npx wrangler deploy --config wrangler.jsonc
