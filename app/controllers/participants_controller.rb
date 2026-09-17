@@ -35,6 +35,21 @@ class ParticipantsController < ApplicationController
     }
   end
 
+  def reactions
+    require_participant_same_origin!
+
+    session = participant_auth.current_session!
+    event = session.record_reaction(reaction: params.require(:reaction))
+
+    return render_error("Reaction rate limit exceeded", :too_many_requests) unless event
+
+    head :created
+  rescue ActionController::ParameterMissing
+    render_error("reaction is required", :bad_request)
+  rescue ActionDispatch::Http::Parameters::ParseError
+    render_error("Malformed JSON", :bad_request)
+  end
+
   def destroy_session
     require_participant_same_origin!
     participant_auth.logout!

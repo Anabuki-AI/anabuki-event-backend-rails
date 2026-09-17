@@ -49,7 +49,7 @@ Rails は **別DB** `anabuki_event_rails_*` と、別Docker volume `rails-postgr
 
 ## Participant registration
 
-参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。完全なrequest/response契約は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
+参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。待機画面の `POST /api/participants/reactions` はセッションごとに500msに1件だけイベントを保存し、連打はイベントを作成せず `429 Too Many Requests` を返します。完全なrequest/response契約は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
 
 ## Background jobs (Que)
 
@@ -103,6 +103,7 @@ GET  /health
 POST /api/participants
 GET  /api/participants/me
 POST /api/participants/presence
+POST /api/participants/reactions
 DELETE /api/participants/session
 GET  /api/auth/google/status
 GET  /api/auth/google/start
