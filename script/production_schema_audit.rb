@@ -19,7 +19,7 @@ end
 
 
 def table_exists?(connection, table_name)
-  result = connection.exec_params(<<~SQL, [table_name])
+  result = connection.exec_params(<<~SQL, [ table_name ])
     SELECT EXISTS (
       SELECT 1
       FROM information_schema.tables
@@ -34,7 +34,7 @@ end
 
 
 def column_metadata(connection, table_name, column_name)
-  result = connection.exec_params(<<~SQL, [table_name, column_name])
+  result = connection.exec_params(<<~SQL, [ table_name, column_name ])
     SELECT data_type, udt_name, column_default, is_nullable
     FROM information_schema.columns
     WHERE table_schema = 'public'
@@ -99,7 +99,7 @@ begin
   migration_version_present = if schema_migrations_present
     result = connection.exec_params(
       "SELECT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = $1) AS present",
-      ["20260918070000"]
+      [ "20260918070000" ]
     )
     result[0]["present"] == "t"
   else
