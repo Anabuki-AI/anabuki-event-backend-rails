@@ -1,0 +1,59 @@
+name: Production schema audit (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Enter AUDIT_PRODUCTION_SCHEMA exactly to inspect production schema"
+        required: true
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-schema-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Inspect production schema
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Reject non-main dispatches
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main" || {
+            echo "::error::Production schema audit can only run from main."
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Validate audit confirmation
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "AUDIT_PRODUCTION_SCHEMA" || {
+            echo "::error::confirmation must equal AUDIT_PRODUCTION_SCHEMA."
+            exit 1
+          }
+          test -n "$DATABASE_URL" || {
+            echo "::error::DATABASE_URL is not configured in the production environment."
+            exit 1
+          }
+
+      - name: Run read-only production schema audit
+        run: bundle exec ruby script/production_schema_audit.rb
