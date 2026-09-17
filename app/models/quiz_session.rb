@@ -66,7 +66,50 @@ class QuizSession < ApplicationRecord
     Question.where("position > ?", current_question.position).order(:position).first
   end
 
-  def record_answer!(participant:, question_id:, choice:, confidence_level:)
+  # Locks one confidence level before an answer can be selected. Low confidence
+  # (Lv.1) receives one server-chosen incorrect option to eliminate.
+  def confirm_confidence_level!(participant:, question_id:, confidence_level:)
+    expired = false
+    selection = transaction do
+      lock!
+      question = current_question
+
+      if requested_close_expired?
+        update!(phase: "closed", phase_started_at: Time.current)
+        expired = true
+        nil
+      elsif !answer_window_matches?(question, question_id)
+        raise InvalidTransition, "Answers are not being accepted for this question"
+      elsif answer_window_expired?(question)
+        update!(phase: "closed", phase_started_at: Time.current)
+        expired = true
+        nil
+      else
+        existing = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
+        if existing
+          if existing.confidence_level != confidence_level
+            raise InvalidTransition, "Confidence level has already been selected"
+          end
+
+          existing
+        else
+          ParticipantQuizConfidenceSelection.create!(
+            participant:,
+            question:,
+            confidence_level:,
+            eliminated_choice: eliminated_choice_for(question, confidence_level),
+            locked_at: Time.current
+          )
+        end
+      end
+    end
+
+    raise InvalidTransition, "Answers are not being accepted for this question" if expired
+
+    selection
+  end
+
+  def record_answer!(participant:, question_id:, choice:)
     expired = false
     answer = transaction do
       lock!
@@ -83,7 +126,11 @@ class QuizSession < ApplicationRecord
         expired = true
         nil
       else
-        ParticipantAnswer.record!(participant:, question:, choice:, confidence_level:)
+        selection = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
+        raise InvalidTransition, "Select a confidence level before answering" unless selection
+        raise InvalidTransition, "This choice was eliminated by Lv.1" if selection.eliminated_choice == choice
+
+        ParticipantAnswer.record!(participant:, question:, choice:, confidence_level: selection.confidence_level)
       end
     end
 
@@ -168,6 +215,7 @@ class QuizSession < ApplicationRecord
     transaction do
       lock!
       ParticipantAnswer.delete_all
+      ParticipantQuizConfidenceSelection.delete_all
       Question.update_all(revealed_at: nil)
       update!(status: "waiting", current_question: nil, phase: nil, phase_started_at: Time.current, answering_started_at: nil)
     end
@@ -181,6 +229,12 @@ class QuizSession < ApplicationRecord
 
   def requested_close_expired?
     phase == "closing" && phase_started_at.present? && Time.current >= phase_started_at + ANSWER_CLOSE_DELAY
+  end
+
+  def eliminated_choice_for(question, confidence_level)
+    return nil unless confidence_level == "low"
+
+    (%w[A B C D] - [ question.correct_answer ]).sample
   end
 
   def answer_window_expired?(question)

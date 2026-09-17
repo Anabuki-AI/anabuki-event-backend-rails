@@ -50,6 +50,7 @@ Rails.application.routes.draw do
     get "/operator/quiz/questions/:id/image", to: "operator_quiz#image"
 
     get "/participant/quiz/state", to: "participant_quiz#state"
+    post "/participant/quiz/confidence-level", to: "participant_quiz#confirm_confidence_level"
     post "/participant/quiz/answers", to: "participant_quiz#create"
     get "/participant/quiz/questions/:id/image", to: "participant_quiz#image"
 

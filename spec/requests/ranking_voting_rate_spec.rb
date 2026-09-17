@@ -130,6 +130,24 @@ RSpec.describe "Rankings and voting rate", type: :request do
       expect(body["me"]).to eq({ "rank" => 2, "participant_id" => alice.id, "display_name" => "Alice" })
     end
 
+    it "ranks negative scores below zero-point participants" do
+      zero = create_participant("Zero")
+      negative = create_participant("Negative")
+
+      answer(zero, question1, choice: "A", points: 0)
+      answer(negative, question1, choice: "A", points: -50)
+      reveal_all_questions
+
+      sign_in(negative)
+      get "/api/rankings"
+
+      expect(response.parsed_body["rankings"]).to eq([
+        { "rank" => 1, "participant_id" => zero.id, "display_name" => "Zero" },
+        { "rank" => 2, "participant_id" => negative.id, "display_name" => "Negative" }
+      ])
+      expect(response.parsed_body["me"]).to include("rank" => 2)
+    end
+
     it "assigns the same rank to equal scores and skips the next rank" do
       alice = create_participant("Alice")
       bob = create_participant("Bob")

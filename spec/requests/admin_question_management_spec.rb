@@ -206,7 +206,7 @@ RSpec.describe "Admin question management", type: :request do
     put "/api/admin/questions/#{question.id}", params: question_payload(correct_answer: "B").merge(points: 240), as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(correct_before_edit.reload.awarded_points).to eq(0)
+    expect(correct_before_edit.reload.awarded_points).to eq(-120)
     expect(correct_after_edit.reload.awarded_points).to eq(120)
     expect(unaffected_choice.reload).to have_attributes(awarded_points: 0, updated_at: unaffected_updated_at)
     expect(unrelated_answer.reload).to have_attributes(awarded_points: 100, updated_at: unrelated_updated_at)
