@@ -17,3 +17,4 @@
 !.env.example
 /config/master.key
 /config/credentials/*.key
+/.worktree

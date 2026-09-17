@@ -39,6 +39,13 @@ Rails.application.routes.draw do
     get "/operator/auth/session", to: "operator_auth#session"
     post "/operator/auth/logout", to: "operator_auth#logout"
 
+    get "/operator/quiz/state", to: "operator_quiz#state"
+    post "/operator/quiz/start", to: "operator_quiz#start"
+    post "/operator/quiz/publish", to: "operator_quiz#publish"
+    post "/operator/quiz/close", to: "operator_quiz#close"
+    post "/operator/quiz/reveal", to: "operator_quiz#reveal"
+    post "/operator/quiz/finish", to: "operator_quiz#finish"
+
     get "/admin/operator-identities", to: "operator_management_accesses#index"
     patch "/admin/operator-identities/:id", to: "operator_management_accesses#update"
   end
