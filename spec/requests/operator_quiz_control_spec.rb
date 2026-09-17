@@ -2,7 +2,11 @@ require "rails_helper"
 
 RSpec.describe "Operator quiz control", type: :request do
   around do |example|
-    with_env("PUBLIC_BASE_URL" => "https://event.example", "OPERATOR_FRONTEND_URL" => "https://event.example/operator") do
+    with_env(
+      "PUBLIC_BASE_URL" => "https://event.example",
+      "ADMIN_FRONTEND_URL" => "http://localhost:3000/admin",
+      "OPERATOR_FRONTEND_URL" => "https://event.example/operator"
+    ) do
       host! "event.example"
       https!
       example.run

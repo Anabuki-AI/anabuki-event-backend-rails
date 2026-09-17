@@ -75,4 +75,35 @@ RSpec.describe QuizSession do
   it "leaves phase_started_at nil until the first transition" do
     expect(described_class.current.phase_started_at).to be_nil
   end
+
+  it "does not retry an insert when the singleton is already materialized" do
+    described_class.current
+    inserts = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _started, _finished, _id, payload|
+      inserts << payload[:sql] if payload[:sql].start_with?('INSERT INTO "quiz_sessions"')
+    end
+
+    described_class.current
+
+    expect(inserts).to be_empty
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  it "serializes concurrent first access into one singleton row" do
+    described_class.delete_all
+    release = Queue.new
+    threads = 4.times.map do
+      Thread.new do
+        release.pop
+        described_class.current.id
+      end
+    end
+    threads.each { release << true }
+
+    ids = threads.map(&:value)
+
+    expect(ids.uniq).to eq([ ids.first ])
+    expect(described_class.where(singleton: true).count).to eq(1)
+  end
 end
