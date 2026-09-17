@@ -51,7 +51,7 @@ Rails は PostgreSQL の **単一DB** `anabuki_event_rails_*` と、別Docker vo
 
 ## Participant registration
 
-参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。待機画面の `POST /api/participants/reactions` はセッションごとに500msに1件だけイベントを保存し、連打はイベントを作成せず `429 Too Many Requests` を返します。完全なrequest/response契約は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
+参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。待機画面の `POST /api/participants/reactions` はセッションごとに500msに1件だけイベントを保存し、連打はイベントを作成せず `429 Too Many Requests` を返します。クイズ回答は締切前なら同じ `POST /api/participant/quiz/answers` を再送して選択肢だけ更新できます。自信度とLv.1の除外選択肢は問題ごとに確定したままで、締切後の再送は `409 Conflict` です。完全なrequest/response契約は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
 
 ## Background jobs (Que)
 

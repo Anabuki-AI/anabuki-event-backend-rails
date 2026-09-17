@@ -1,7 +1,6 @@
-# One immutable answer per participant per question. The score and selected
-# multiplier are snapshotted at answer time, so later setting changes never
-# rewrite past scoring. Question edits explicitly recalculate only answers for
-# the edited question.
+# One answer per participant per question. The selected confidence level is
+# immutable, while the choice can be corrected until the answer window closes.
+# Question edits explicitly recalculate only answers for the edited question.
 class ParticipantAnswer < ApplicationRecord
   class AlreadyRecorded < StandardError; end
 
@@ -14,14 +13,19 @@ class ParticipantAnswer < ApplicationRecord
   validates :question_id, uniqueness: { scope: :participant_id }
 
   def self.record!(participant:, question:, choice:, confidence_level:)
+    multiplier = ConfidenceMultiplier.find_by!(level: confidence_level)
     existing = find_by(participant:, question:)
     if existing
       return existing if existing.choice == choice && existing.confidence_level == confidence_level
+      raise AlreadyRecorded, "Confidence level cannot be changed" unless existing.confidence_level == confidence_level
 
-      raise AlreadyRecorded, "This answer has already been recorded"
+      existing.update!(
+        choice:,
+        awarded_points: awarded_points_for(question:, choice:, confidence_level:, multiplier:)
+      )
+      return existing
     end
 
-    multiplier = ConfidenceMultiplier.find_by!(level: confidence_level)
     answer = new(participant:, question:, choice:, confidence_level:)
     answer.awarded_points = awarded_points_for(question:, choice:, confidence_level:, multiplier:)
     answer.save!
