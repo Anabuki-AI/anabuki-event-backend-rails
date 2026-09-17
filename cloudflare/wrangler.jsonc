@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "anabuki-event-backend",
+  "main": "src/index.ts",
+  // This Worker has no public workers.dev endpoint; the frontend reaches it
+  // through the BACKEND service binding. Add an explicit route only when the
+  // production DNS/domain is approved.
+  "workers_dev": false,
+  "compatibility_date": "2026-08-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "containers": [
+    {
+      "class_name": "RailsContainer",
+      "image": "../Dockerfile",
+      "max_instances": 1,
+      "rollout_step_percentage": [100]
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RAILS_CONTAINER",
+        "class_name": "RailsContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RailsContainer"]
+    }
+  ],
+  "vars": {
+    "ACTIVE_STORAGE_SERVICE": "r2",
+    "PORT": "8080",
+    "RAILS_ENV": "production",
+    "R2_REGION": "auto",
+    "RAILS_MAX_THREADS": "5"
+  },
+  "secrets": {
+    "required": [
+      "DATABASE_URL",
+      "OPERATOR_DATABASE_URL",
+      "SECRET_KEY_BASE",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "ADMIN_EMAIL_ALLOWLIST",
+      "OPERATOR_EMAIL_ALLOWLIST",
+      "PUBLIC_BASE_URL",
+      "ADMIN_FRONTEND_URL",
+      "OPERATOR_FRONTEND_URL",
+      "GOOGLE_OAUTH_CALLBACK_URL",
+      "OPERATOR_GOOGLE_OAUTH_CALLBACK_URL",
+      "R2_ENDPOINT",
+      "R2_BUCKET",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY"
+    ]
+  }
+}

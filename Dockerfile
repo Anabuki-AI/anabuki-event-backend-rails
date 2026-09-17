@@ -29,4 +29,6 @@ RUN apt-get update -qq && apt-get install --no-install-recommends -y libpq5 post
 COPY --from=production-build /usr/local/bundle /usr/local/bundle
 COPY --from=production-build /app /app
 EXPOSE 8080
-CMD ["sh", "-c", "bundle exec rails db:prepare && bundle exec rails server -b 0.0.0.0 -p ${PORT:-8080}"]
+# Do not run db:prepare here. Production migration timing must be an explicit,
+# reviewed operation against the externally managed PostgreSQL database.
+CMD ["sh", "-c", "bundle exec rails server -b 0.0.0.0 -p ${PORT:-8080}"]

@@ -142,3 +142,78 @@ Copy `.env.example`; values named `GOOGLE_CLIENT_SECRET`, `POSTGRES_PASSWORD`, `
 ## CI
 
 GitHub Actions runs Brakeman, RuboCop, Zeitwerk, and RSpec against PostgreSQL. RSpec covers UUID participant registration, hashed Cookie sessions and their revocation, Google OAuth registration/login and callback rejection (with external Google calls stubbed), Pundit authorization and admin access revocation, origin policy, and a PostgreSQL Que enqueue/execution smoke spec. CI never needs a Sentry DSN, so no event is sent during checks.
+
+## Cloudflare Containers production deployment
+
+The Rails image is deployed by the `cloudflare/` Worker using the official `@cloudflare/containers` SDK. The Worker forwards requests to one named `RailsContainer` instance on the container's configured port 8080 (`defaultPort = 8080`, matching `EXPOSE 8080` and `PORT=8080`). Wrangler's `image: "../Dockerfile"` is the Dockerfile itself, as required by the Containers deploy format; the Docker build context includes the repository root `Dockerfile`, `Gemfile`, `Gemfile.lock`, application source, and `cloudflare/` is only the Wrangler project directory. The container disk is ephemeral, so Active Storage uses the `r2` service in production (`aws-sdk-s3`) and reads `R2_ENDPOINT`, `R2_BUCKET`, `R2_REGION`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` from the Worker environment.
+
+The production Docker command starts Rails only. It deliberately does **not** run `db:prepare`: the external PostgreSQL database is not provisioned by this repository, and first migration must be an explicit, reviewed operation after the database owner confirms the target. Hyperdrive is not configured for Rails, including the shared Hyperdrive ID `7d2c5dac9bbd4bbca23b3a0a66116804`. This is not merely an unvalidated convenience: the official [Hyperdrive getting-started documentation](https://developers.cloudflare.com/hyperdrive/get-started/) says its secure connection string is accessible only from the Worker, and the [connection lifecycle documentation](https://developers.cloudflare.com/hyperdrive/concepts/connection-lifecycle/) describes a Worker-side edge connection to the Hyperdrive instance followed by Hyperdrive's pooled origin connection. Therefore a Worker-generated `env.HYPERDRIVE.connectionString` must not be passed into a Rails Container as if it were a normal PostgreSQL URL; Containers support for this path is unverified and is not recommended. Rails connects to the externally managed PostgreSQL URLs through `DATABASE_URL` and `OPERATOR_DATABASE_URL`.
+
+### GitHub Actions behavior
+
+`.github/workflows/ci.yml` runs checks on pull requests and `main` pushes. The production deployment job runs only after `check` succeeds on a `main` push, or from `workflow_dispatch` selected on `main`; pull requests never deploy. It targets the GitHub `production` environment and uses a non-canceling deployment concurrency group, so a second run cannot cancel an in-flight production rollout. Each deployment also compares `github.sha` with the current `origin/main` ref immediately before deployment and skips stale runs, preventing an older queued run from rolling back a newer main commit. `notify-parent` and `deploy-production` intentionally both depend only on `check` and may run in parallel: parent gitlink synchronization is not a deployment prerequisite, and the parent notification has its own same-SHA guard. It uses read-only `contents` permissions and the GitHub environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be scoped only to the required Workers/Containers deployment operations.
+
+Before the first deployment, create the GitHub `production` environment secrets for deployment and install the application secrets in the `anabuki-event-backend` Worker secret store using Wrangler. Each command below prompts for the value through stdin; run it only from an approved operator workstation. Do not put values in Git, GitHub workflow YAML, or this README:
+
+```text
+DATABASE_URL
+OPERATOR_DATABASE_URL
+SECRET_KEY_BASE
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+ADMIN_EMAIL_ALLOWLIST
+OPERATOR_EMAIL_ALLOWLIST
+PUBLIC_BASE_URL
+ADMIN_FRONTEND_URL
+OPERATOR_FRONTEND_URL
+GOOGLE_OAUTH_CALLBACK_URL
+OPERATOR_GOOGLE_OAUTH_CALLBACK_URL
+R2_ENDPOINT
+R2_BUCKET
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+```
+
+```bash
+for name in DATABASE_URL OPERATOR_DATABASE_URL SECRET_KEY_BASE GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET ADMIN_EMAIL_ALLOWLIST OPERATOR_EMAIL_ALLOWLIST PUBLIC_BASE_URL ADMIN_FRONTEND_URL OPERATOR_FRONTEND_URL GOOGLE_OAUTH_CALLBACK_URL OPERATOR_GOOGLE_OAUTH_CALLBACK_URL R2_ENDPOINT R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+  npx wrangler secret put "$name" --config wrangler.jsonc
+ done
+```
+
+`cloudflare/wrangler.jsonc` declares these names as required, but `secrets.required` is validation/metadata only; it does **not** create or populate Worker secrets. The loop above is the explicit bootstrap and must be run by an approved operator. The ingress Worker returns a clear `503 backend_not_configured` response listing missing names (never values) instead of starting a partially configured Rails container. The backend config sets `workers_dev: false`; no public workers.dev endpoint or production route is configured, so the frontend `BACKEND` service binding is the intended Worker-to-Worker path. Fixed-domain routes/custom domains are intentionally unset until the approved DNS change; adding a route later is a separate reviewed configuration operation. Secret registration, database creation/migration, and a real deployment are intentionally outside this change.
+
+### Explicit database migration procedure
+
+`Dockerfile` does not run a migration during boot. The supported procedure is an approved local workstation or an approved/manual CI job with the exact backend commit checked out and `RAILS_ENV=production`, `DATABASE_URL`, and `OPERATOR_DATABASE_URL` injected by an approved secret manager. Do **not** depend on a Containers `exec` command or an unauthenticated migration RPC. Wrangler 4.133.0 exposes `containers ssh`, but SSH is not required for the migration path.
+
+After the database owner confirms the target, backup, maintenance window, and rollback/restore plan, run the following in the backend checkout. The connection URLs must be injected without printing or committing them:
+
+```bash
+export RAILS_ENV=production
+# Inject DATABASE_URL and OPERATOR_DATABASE_URL from the approved secret store.
+
+bundle exec rails db:migrate:status:primary
+bundle exec rails db:migrate:status:operator
+# Review the two status outputs before applying anything.
+bundle exec rails db:migrate:primary
+bundle exec rails db:migrate:operator
+bundle exec rails db:migrate:status:primary
+bundle exec rails db:migrate:status:operator
+```
+
+The separate tasks are verified by `rails -T` in this checkout. `db:prepare` is intentionally not used for production because it may create a database when one does not exist; the container never runs it automatically. Existing production DB migration remains a separately approved operation, and no production database credentials or Cloudflare credentials are included in this change.
+
+Manual validation without deploying the application can be run from `cloudflare/` with Node.js 22.19.0 and Docker available:
+
+```bash
+npm ci
+npx wrangler deploy --dry-run --config wrangler.jsonc
+```
+
+If Docker is unavailable, the Worker/config-only validation (it does not build or roll out the image) is:
+
+```bash
+npx wrangler deploy --dry-run --containers-rollout=none --config wrangler.jsonc
+```
+
+The first real frontend deploy must happen after the backend Worker exists, because the frontend uses a Cloudflare service binding to this Worker. See `cloudflare/src/index.ts` and `cloudflare/wrangler.jsonc` for the ingress, required secret validation, and container configuration.

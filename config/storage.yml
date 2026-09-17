@@ -6,6 +6,17 @@ local:
   service: Disk
   root: <%= Rails.root.join("storage") %>
 
+# Cloudflare R2 exposes an S3-compatible API. Keep all values in the deployment
+# secret store; the empty defaults preserve local/test boot without R2 secrets.
+r2:
+  service: S3
+  endpoint: <%= ENV.fetch("R2_ENDPOINT", "") %>
+  access_key_id: <%= ENV.fetch("R2_ACCESS_KEY_ID", "") %>
+  secret_access_key: <%= ENV.fetch("R2_SECRET_ACCESS_KEY", "") %>
+  region: <%= ENV.fetch("R2_REGION", "auto") %>
+  bucket: <%= ENV.fetch("R2_BUCKET", "") %>
+  force_path_style: true
+
 # Use bin/rails credentials:edit to set the AWS secrets (as aws:access_key_id|secret_access_key)
 # amazon:
 #   service: S3

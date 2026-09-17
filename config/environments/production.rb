@@ -1,4 +1,24 @@
 require "active_support/core_ext/integer/time"
+require "uri"
+
+# The primary and operator migration sets intentionally use the same version
+# namespace (for example, both have a 20260410000000 migration). They must
+# therefore target separate PostgreSQL databases; sharing one database would
+# make one database's schema_migrations table mark the other migration as run.
+if ENV["DATABASE_URL"].to_s != "" && ENV["OPERATOR_DATABASE_URL"].to_s != ""
+  begin
+    primary = URI.parse(ENV["DATABASE_URL"])
+    operator = URI.parse(ENV["OPERATOR_DATABASE_URL"])
+    same_database = [ primary.scheme, primary.host, primary.port, primary.path ] ==
+      [ operator.scheme, operator.host, operator.port, operator.path ]
+
+    if same_database
+      raise "DATABASE_URL and OPERATOR_DATABASE_URL must target separate PostgreSQL databases", cause: nil
+    end
+  rescue URI::InvalidURIError
+    raise "DATABASE_URL and OPERATOR_DATABASE_URL must be valid PostgreSQL URLs", cause: nil
+  end
+end
 
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
@@ -18,8 +38,9 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Store uploaded files on the local file system (see config/storage.yml for options).
-  config.active_storage.service = :local
+  # Container disks are ephemeral. Production uploads must use the R2-backed
+  # Active Storage service; R2_* values are supplied by Worker secrets.
+  config.active_storage.service = ENV.fetch("ACTIVE_STORAGE_SERVICE", "r2").to_sym
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true
