@@ -5,6 +5,7 @@
 class QuizSession < ApplicationRecord
   STATUSES = %w[waiting in_progress finished].freeze
   PHASES = %w[answering closed revealed].freeze
+  SINGLETON_LOCK_KEY = 4_246_813_579
 
   class InvalidTransition < StandardError; end
 
@@ -14,9 +15,16 @@ class QuizSession < ApplicationRecord
   validates :phase, inclusion: { in: PHASES }, allow_nil: true
   validate :phase_only_while_in_progress
 
-  # Lazily materializes the singleton session row.
+  # Lazily materializes the singleton session row. The initial lookup avoids
+  # an INSERT for the common read path. A transaction-level advisory lock
+  # serializes the first lookup when multiple requests initialize the quiz at
+  # the same time, so the unique index is a last-resort invariant rather than
+  # the normal concurrency mechanism.
   def self.current
-    create_or_find_by!(singleton: true)
+    find_by(singleton: true) || transaction(requires_new: true) do
+      connection.execute("SELECT pg_advisory_xact_lock(#{SINGLETON_LOCK_KEY})")
+      find_or_create_by!(singleton: true)
+    end
   end
 
   def start!
