@@ -4,7 +4,8 @@
 # translate to HTTP 422.
 class QuizSession < ApplicationRecord
   STATUSES = %w[waiting in_progress finished].freeze
-  PHASES = %w[answering closed revealed].freeze
+  PHASES = %w[answering closing closed revealed].freeze
+  ANSWER_CLOSE_DELAY = 10.seconds
   SINGLETON_LOCK_KEY = 4_246_813_579
 
   class InvalidTransition < StandardError; end
@@ -35,7 +36,11 @@ class QuizSession < ApplicationRecord
       question = Question.order(:position).first
       raise InvalidTransition, "No questions are registered" unless question
 
-      update!(status: "in_progress", current_question: question, phase: "answering", phase_started_at: Time.current)
+      started_at = Time.current
+      update!(
+        status: "in_progress", current_question: question, phase: "answering",
+        phase_started_at: started_at, answering_started_at: started_at
+      )
     end
   end
 
@@ -50,7 +55,8 @@ class QuizSession < ApplicationRecord
       question = next_question
       raise InvalidTransition, "There are no more questions" unless question
 
-      update!(current_question: question, phase: "answering", phase_started_at: Time.current)
+      started_at = Time.current
+      update!(current_question: question, phase: "answering", phase_started_at: started_at, answering_started_at: started_at)
     end
   end
 
@@ -66,11 +72,13 @@ class QuizSession < ApplicationRecord
       lock!
       question = current_question
 
-      unless answer_window_matches?(question, question_id)
+      if requested_close_expired?
+        update!(phase: "closed", phase_started_at: Time.current)
+        expired = true
+        nil
+      elsif !answer_window_matches?(question, question_id)
         raise InvalidTransition, "Answers are not being accepted for this question"
-      end
-
-      if answer_window_expired?(question)
+      elsif answer_window_expired?(question)
         update!(phase: "closed", phase_started_at: Time.current)
         expired = true
         nil
@@ -84,11 +92,48 @@ class QuizSession < ApplicationRecord
     answer
   end
 
+  # Starts the ten-second, participant-visible countdown requested by an
+  # operator. Answers remain accepted until CloseQuizAnswersJob finalizes it.
+  def request_close!
+    closing_started_at = transaction do
+      lock!
+      require_status!("in_progress", "Quiz is not in progress")
+      require_phase!("answering", "Answers are already being closed")
+
+      started_at = Time.current
+      # Keep the original answer-window start for an independent question time
+      # limit; phase_started_at now becomes the close-countdown start.
+      update!(
+        phase: "closing", phase_started_at: started_at,
+        answering_started_at: answering_started_at || phase_started_at
+      )
+      started_at
+    end
+
+    CloseQuizAnswersJob.set(wait_until: closing_started_at + ANSWER_CLOSE_DELAY)
+      .perform_later(current_question_id, closing_started_at.iso8601(6))
+  end
+
+  # Used for automatic per-question time limits, which must remain immediate.
   def close!
     transaction do
       lock!
       require_status!("in_progress", "Quiz is not in progress")
       require_phase!("answering", "Answers are already closed")
+
+      update!(phase: "closed", phase_started_at: Time.current)
+    end
+  end
+
+  # Idempotently finalizes only the exact delayed close that scheduled this job.
+  # A job from an earlier question/reset can therefore never close a newer one.
+  def complete_requested_close!(question_id:, closing_started_at:)
+    transaction do
+      lock!
+      return unless status == "in_progress" && phase == "closing"
+      return unless current_question_id == question_id
+      return unless phase_started_at == closing_started_at
+      return if Time.current < phase_started_at + ANSWER_CLOSE_DELAY
 
       update!(phase: "closed", phase_started_at: Time.current)
     end
@@ -112,7 +157,7 @@ class QuizSession < ApplicationRecord
       lock!
       require_status_not_finished!
 
-      update!(status: "finished", current_question: nil, phase: nil, phase_started_at: Time.current)
+      update!(status: "finished", current_question: nil, phase: nil, phase_started_at: Time.current, answering_started_at: nil)
     end
   end
 
@@ -124,19 +169,24 @@ class QuizSession < ApplicationRecord
       lock!
       ParticipantAnswer.delete_all
       Question.update_all(revealed_at: nil)
-      update!(status: "waiting", current_question: nil, phase: nil, phase_started_at: Time.current)
+      update!(status: "waiting", current_question: nil, phase: nil, phase_started_at: Time.current, answering_started_at: nil)
     end
   end
 
   private
 
   def answer_window_matches?(question, question_id)
-    status == "in_progress" && phase == "answering" && question && question.id == question_id.to_i
+    status == "in_progress" && phase.in?(%w[answering closing]) && question && question.id == question_id.to_i
+  end
+
+  def requested_close_expired?
+    phase == "closing" && phase_started_at.present? && Time.current >= phase_started_at + ANSWER_CLOSE_DELAY
   end
 
   def answer_window_expired?(question)
     limit = question.time_limit_seconds
-    limit.present? && phase_started_at.present? && Time.current >= phase_started_at + limit.seconds
+    started_at = answering_started_at || phase_started_at
+    limit.present? && started_at.present? && Time.current >= started_at + limit.seconds
   end
 
   def require_status!(expected, message)

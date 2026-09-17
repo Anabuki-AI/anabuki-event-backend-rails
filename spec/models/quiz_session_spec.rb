@@ -48,6 +48,53 @@ RSpec.describe QuizSession do
     expect(session.reload.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:02:00"))
   end
 
+  it "starts closing immediately but finalizes the requested close only after ten seconds" do
+    question = create_question(position: 1)
+    session = described_class.current
+    scheduled = instance_double(ActiveJob::ConfiguredJob, perform_later: true)
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(scheduled)
+
+    travel_to Time.zone.parse("2026-09-20 10:00:00") do
+      session.start!
+      session.request_close!
+    end
+
+    expect(session.reload.phase).to eq("closing")
+    expect(session.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:00:00"))
+    expect(scheduled).to have_received(:perform_later).with(question.id, session.phase_started_at.iso8601(6))
+
+    travel_to Time.zone.parse("2026-09-20 10:00:09") do
+      session.complete_requested_close!(question_id: question.id, closing_started_at: session.phase_started_at)
+    end
+    expect(session.reload.phase).to eq("closing")
+
+    travel_to Time.zone.parse("2026-09-20 10:00:10") do
+      session.complete_requested_close!(question_id: question.id, closing_started_at: session.phase_started_at)
+    end
+    expect(session.reload.phase).to eq("closed")
+  end
+
+  it "ignores a scheduled close that no longer matches the current question" do
+    first = create_question(position: 1)
+    second = create_question(position: 2)
+    session = described_class.current
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+    session.start!
+    session.request_close!
+    closing_started_at = session.reload.phase_started_at
+    session.reset!
+    session.start!
+    session.close!
+    session.reveal!
+    session.publish_next!
+
+    travel_to 1.minute.from_now do
+      session.complete_requested_close!(question_id: first.id, closing_started_at:)
+    end
+
+    expect(session.reload).to have_attributes(current_question_id: second.id, phase: "answering")
+  end
+
   it "marks the current question revealed and clears that history on reset" do
     question = create_question(position: 1)
     session = described_class.current

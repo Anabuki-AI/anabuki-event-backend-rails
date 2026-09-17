@@ -57,6 +57,9 @@ class ParticipantQuizController < ApplicationController
     return state unless quiz_session.status == "in_progress"
 
     state[:phase] = quiz_session.phase
+    # Shared with the operator state so a closing countdown is synchronized to
+    # the server timestamp instead of the participant browser's start time.
+    state[:phase_started_at] = quiz_session.phase_started_at&.iso8601
     state[:question] = question_json(quiz_session.current_question) if quiz_session.current_question
     my_answer = current_answer(quiz_session, participant)
     state[:answered] = my_answer.present?

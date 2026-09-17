@@ -273,31 +273,46 @@ RSpec.describe "Operator quiz control", type: :request do
   end
 
   describe "POST /api/operator/quiz/close and reveal" do
-    it "closes answering and then reveals the answer" do
+    it "starts a ten-second closing countdown instead of closing immediately" do
       authenticate_operator(manager_enabled: true)
-      create_question(position: 1)
+      question = create_question(position: 1)
       QuizSession.current.start!
+      scheduled = instance_double(ActiveJob::ConfiguredJob, perform_later: true)
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(scheduled)
 
       post "/api/operator/quiz/close", headers: operator_headers, as: :json
-      expect(response.parsed_body["phase"]).to eq("closed")
 
-      post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body["phase"]).to eq("revealed")
+      expect(response.parsed_body["phase"]).to eq("closing")
+      expect(response.parsed_body["phase_started_at"]).to be_present
+      expect(CloseQuizAnswersJob).to have_received(:set).with(wait_until: be_within(1.second).of(10.seconds.from_now))
+      expect(scheduled).to have_received(:perform_later).with(question.id, a_string_matching(/T/))
     end
 
-    it "rejects double close and double reveal with 422" do
+    it "rejects another close and answer reveal while the countdown is running" do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
       QuizSession.current.start!
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
 
       post "/api/operator/quiz/close", headers: operator_headers, as: :json
       post "/api/operator/quiz/close", headers: operator_headers, as: :json
       expect(response).to have_http_status(:unprocessable_content)
 
       post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
-      post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
       expect(response).to have_http_status(:unprocessable_content)
+    end
+
+    it "can reveal after the delayed close is finalized" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      QuizSession.current.start!
+      QuizSession.current.close!
+
+      post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["phase"]).to eq("revealed")
     end
 
     it "rejects close while waiting with 422" do

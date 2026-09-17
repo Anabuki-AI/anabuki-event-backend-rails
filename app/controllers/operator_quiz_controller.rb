@@ -21,7 +21,13 @@ class OperatorQuizController < ApplicationController
   end
 
   def close
-    QuizSession.current.close!
+    if params[:immediate] == true
+      # The configured per-question timer is a strict server-enforced deadline.
+      QuizSession.current.close!
+    else
+      # A manual operator close starts the shared ten-second countdown.
+      QuizSession.current.request_close!
+    end
     render json: quiz_state
   end
 
