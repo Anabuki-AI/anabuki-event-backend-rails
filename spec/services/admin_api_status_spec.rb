@@ -109,6 +109,72 @@ RSpec.describe AdminApiStatus do
     expect(statuspage.to_json).not_to include("connection refused")
   end
 
+  it "keeps Datadog unconfigured when both configured metric queries have no samples" do
+    no_samples = AdminApiStatusTransport::Response.new(200, {
+      "data" => { "attributes" => { "values" => [ [] ] } }
+    }.to_json)
+    allow(transport).to receive(:request) do |url:, **|
+      case url
+      when "https://status.example.test/api/v2/summary.json"
+        AdminApiStatusTransport::Response.new(200, {
+          "status" => { "indicator" => "none", "description" => "All systems operational" }
+        }.to_json)
+      when "https://api.datadog.example.test/api/v2/metrics/query"
+        no_samples
+      else
+        raise "Unexpected URL: #{url}"
+      end
+    end
+
+    result = with_env(provider_env) do
+      described_class.new(cache:, transport:, clock:).call
+    end
+
+    datadog = result.fetch("providers").last
+    # Compatibility behavior pending provider-state contract agreement: use the
+    # metric states below rather than treating this aggregate as configuration proof.
+    expect(datadog).to include("state" => "unconfigured", "fetchedAt" => nil)
+    expect(datadog.dig("metrics", "errorRate")).to include(
+      "state" => "unavailable",
+      "value" => nil,
+      "issue" => include("code" => "no_data")
+    )
+    expect(datadog.dig("metrics", "responseTime")).to include(
+      "state" => "unavailable",
+      "value" => nil,
+      "issue" => include("code" => "no_data")
+    )
+  end
+
+  it "passes through finite Datadog values outside their semantic ranges" do
+    values = [ 101.0, -1.0 ]
+    allow(transport).to receive(:request) do |url:, **|
+      case url
+      when "https://status.example.test/api/v2/summary.json"
+        AdminApiStatusTransport::Response.new(200, {
+          "status" => { "indicator" => "none", "description" => "All systems operational" }
+        }.to_json)
+      when "https://api.datadog.example.test/api/v2/metrics/query"
+        AdminApiStatusTransport::Response.new(200, {
+          "data" => { "attributes" => { "times" => [ 1_756_728_000_000 ], "values" => [ [ values.shift ] ] } }
+        }.to_json)
+      else
+        raise "Unexpected URL: #{url}"
+      end
+    end
+
+    result = with_env(provider_env) do
+      described_class.new(cache:, transport:, clock:).call
+    end
+
+    datadog = result.fetch("providers").last
+    # TODO: agree whether future contract revisions reject or classify invalid
+    # percentages and negative durations; do not silently clamp these values.
+    expect(datadog).to include("state" => "available")
+    expect(datadog.dig("metrics", "errorRate")).to include("state" => "available", "value" => 101.0)
+    expect(datadog.dig("metrics", "responseTime")).to include("state" => "available", "value" => -1.0)
+  end
+
   it "caches a provider snapshot server-side while marking subsequent results as cached" do
     response = AdminApiStatusTransport::Response.new(200, {
       "status" => { "indicator" => "none", "description" => "All systems operational" }
