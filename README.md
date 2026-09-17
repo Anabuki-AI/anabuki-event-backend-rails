@@ -151,9 +151,9 @@ The production Docker command starts Rails only. It deliberately does **not** ru
 
 ### GitHub Actions behavior
 
-`.github/workflows/ci.yml` runs checks on pull requests and `main` pushes. The production deployment job runs only after `check` succeeds on a `main` push, or from `workflow_dispatch` selected on `main`; pull requests never deploy. It targets the GitHub `production` environment and uses a non-canceling deployment concurrency group, so a second run cannot cancel an in-flight production rollout. Each deployment also compares `github.sha` with the current `origin/main` ref immediately before deployment and skips stale runs, preventing an older queued run from rolling back a newer main commit. `notify-parent` and `deploy-production` intentionally both depend only on `check` and may run in parallel: parent gitlink synchronization is not a deployment prerequisite, and the parent notification has its own same-SHA guard. It uses read-only `contents` permissions and the GitHub environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be scoped only to the required Workers/Containers deployment operations.
+`.github/workflows/ci.yml` runs checks on pull requests and `main` pushes. The production deployment job runs only after `check` succeeds on a `main` push, or from `workflow_dispatch` selected on `main`; pull requests never deploy. It targets the GitHub `production` environment and uses a non-canceling deployment concurrency group, so a second run cannot cancel an in-flight production rollout. Each deployment also compares `github.sha` with the current `origin/main` ref immediately before deployment and skips stale runs, preventing an older queued run from rolling back a newer main commit. `notify-parent` and `deploy-production` intentionally both depend only on `check` and may run in parallel: parent gitlink synchronization is not a deployment prerequisite, and the parent notification has its own same-SHA guard. It uses read-only `contents` permissions and the GitHub `production` environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be scoped only to the required Workers/Containers deployment operations.
 
-Before the first deployment, create the GitHub `production` environment secrets for deployment and install the application secrets in the `anabuki-event-backend` Worker secret store using Wrangler. Each command below prompts for the value through stdin; run it only from an approved operator workstation. Do not put values in Git, GitHub workflow YAML, or this README:
+The same `production` environment may hold application secret values under the names below. The workflow passes each configured value to `wrangler secret put` through stdin after the Worker upload. Empty/unconfigured values are skipped; no placeholder secret is created. Do not put values in Git, GitHub workflow YAML, or this README:
 
 ```text
 DATABASE_URL
@@ -174,13 +174,17 @@ R2_ACCESS_KEY_ID
 R2_SECRET_ACCESS_KEY
 ```
 
+For a manual bootstrap after the initial Worker upload, the following commands prompt for each value through stdin. Run them only from an approved operator workstation:
+
 ```bash
 for name in DATABASE_URL OPERATOR_DATABASE_URL SECRET_KEY_BASE GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET ADMIN_EMAIL_ALLOWLIST OPERATOR_EMAIL_ALLOWLIST PUBLIC_BASE_URL ADMIN_FRONTEND_URL OPERATOR_FRONTEND_URL GOOGLE_OAUTH_CALLBACK_URL OPERATOR_GOOGLE_OAUTH_CALLBACK_URL R2_ENDPOINT R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
   npx wrangler secret put "$name" --config wrangler.jsonc
  done
 ```
 
-`cloudflare/wrangler.jsonc` declares these names as required, but `secrets.required` is validation/metadata only; it does **not** create or populate Worker secrets. The loop above is the explicit bootstrap and must be run by an approved operator. The ingress Worker returns a clear `503 backend_not_configured` response listing missing names (never values) instead of starting a partially configured Rails container. The backend config sets `workers_dev: false`; no public workers.dev endpoint or production route is configured, so the frontend `BACKEND` service binding is the intended Worker-to-Worker path. Fixed-domain routes/custom domains are intentionally unset until the approved DNS change; adding a route later is a separate reviewed configuration operation. Secret registration, database creation/migration, and a real deployment are intentionally outside this change.
+The `secrets.required` configuration property is intentionally omitted. Cloudflare documents that `wrangler deploy` fails when a declared required secret is absent, and a new Worker cannot accept `wrangler secret put` before its first deploy. Omitting that property allows the initial Worker/container artifact upload; the ingress Worker remains safe because it returns a clear `503 backend_not_configured` response listing missing names (never values) instead of starting a partially configured Rails container. On later deployments, configured GitHub Environment secrets are written with `wrangler secret put` through stdin; missing values remain unset and the Worker continues returning 503. `wrangler secret put` creates and deploys a new Worker version, so this step is intentionally after the initial upload.
+
+The backend config sets `workers_dev: false`; no public workers.dev endpoint or production route is configured, so the frontend `BACKEND` service binding is the intended Worker-to-Worker path. Fixed-domain routes/custom domains are intentionally unset until the approved DNS change; adding a route later is a separate reviewed configuration operation. Secret registration, database creation/migration, and a real deployment are intentionally outside this change.
 
 ### Explicit database migration procedure
 
