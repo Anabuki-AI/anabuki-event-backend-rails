@@ -51,6 +51,23 @@ class ApplicationController < ActionController::API
     render json: { error: message }, status: status
   end
 
+  # Resolves the acting identity for audit logging: the admin session identity
+  # when present, otherwise the operator manager session identity. Operator
+  # identities live in the separate operator database, so the recorder keeps
+  # only an email/sub snapshot for them (no foreign key).
+  def audit_actor_identity
+    begin
+      return admin_auth.any_session!.identity
+    rescue AdminAuthError
+      nil
+    end
+    begin
+      operator_auth.manager_session!.identity
+    rescue OperatorAuthError
+      nil
+    end
+  end
+
   def require_same_origin!(config: admin_auth_config)
     origin = request.headers["Origin"]
     return if origin.blank? || config.allowed_origin?(origin)

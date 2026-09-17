@@ -18,6 +18,7 @@ class AdminConfidenceMultipliersController < ApplicationController
 
     multiplier = ConfidenceMultiplier.all_levels.fetch(level)
     multiplier.update!(confidence_multiplier: value)
+    AuditLogRecorder.record(type: "CONFIDENCE_MULTIPLIER_UPDATED", identity: audit_actor_identity, target_type: "CONFIDENCE_MULTIPLIER", target_id: multiplier.level, detail: { "level" => multiplier.level, "confidenceMultiplier" => value.to_f })
     render json: multipliers_json(ConfidenceMultiplier.all_levels)
   end
 

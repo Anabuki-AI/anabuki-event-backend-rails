@@ -46,6 +46,8 @@ class AdminQuestionsController < ApplicationController
       end
     end
 
+    AuditLogRecorder.record(type: "QUESTION_CREATED", identity: audit_actor_identity, target_type: "QUESTION", target_id: question.id, detail: { "position" => question.position })
+
     render json: question_json(question), status: :created
   rescue ActiveRecord::RecordInvalid => error
     render_question_validation_error(error.record)
@@ -60,6 +62,7 @@ class AdminQuestionsController < ApplicationController
     question.assign_attributes(question_attributes)
     assign_image(question)
     question.save!
+    AuditLogRecorder.record(type: "QUESTION_UPDATED", identity: audit_actor_identity, target_type: "QUESTION", target_id: question.id)
     render json: question_json(question)
   rescue ActiveRecord::RecordInvalid => error
     render_question_validation_error(error.record)
@@ -68,7 +71,9 @@ class AdminQuestionsController < ApplicationController
   def destroy
     require_same_origin!
     authorize_event_operator!
-    Question.find(params[:id]).destroy!
+    question = Question.find(params[:id])
+    question.destroy!
+    AuditLogRecorder.record(type: "QUESTION_DELETED", identity: audit_actor_identity, target_type: "QUESTION", target_id: question.id)
     head :no_content
   end
 

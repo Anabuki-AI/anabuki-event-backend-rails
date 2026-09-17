@@ -17,6 +17,13 @@ class OperatorManagementAccessesController < ApplicationController
     return render_error("managerEnabled must be true or false", :unprocessable_content) unless [ true, false ].include?(manager_enabled)
 
     identity = operator_auth.set_management_access!(id: operator_identity_id!, manager_enabled:, actor: pundit_user)
+    AuditLogRecorder.record(
+      type: manager_enabled ? "OPERATOR_ACCESS_GRANTED" : "OPERATOR_ACCESS_REVOKED",
+      identity: pundit_user.identity,
+      target_type: "OPERATOR_IDENTITY",
+      target_id: identity.id,
+      detail: { "operatorEmail" => identity.email, "managerEnabled" => manager_enabled }
+    )
     render json: operator_auth.management_identity_json(identity)
   end
 

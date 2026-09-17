@@ -10,6 +10,7 @@ class ManagementAccessesController < ApplicationController
     identity = AdminIdentity.find(params[:id])
     authorize_admin!(identity, :destroy?)
     admin_auth.deactivate_management_access!(identity.id)
+    AuditLogRecorder.record(type: "MANAGEMENT_ACCESS_REVOKED", identity: pundit_user.identity, target_type: "ADMIN_IDENTITY", target_id: identity.id, detail: { "targetEmail" => identity.email })
     head :no_content
   rescue ArgumentError
     render_error("identityId must be a UUID", :bad_request)

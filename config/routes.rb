@@ -55,5 +55,7 @@ Rails.application.routes.draw do
 
     get "/admin/operator-identities", to: "operator_management_accesses#index"
     patch "/admin/operator-identities/:id", to: "operator_management_accesses#update"
+
+    get "/admin/audit-logs", to: "admin_audit_logs#index"
   end
 end
