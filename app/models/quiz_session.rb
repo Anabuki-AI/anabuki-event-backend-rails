@@ -74,6 +74,16 @@ class QuizSession < ApplicationRecord
     end
   end
 
+  # Debug-only escape hatch: forces the session back to its initial state
+  # regardless of the current status/phase. Unlike the transitions above this
+  # never raises InvalidTransition, since it exists to recover from any state.
+  def reset!
+    transaction do
+      lock!
+      update!(status: "waiting", current_question: nil, phase: nil)
+    end
+  end
+
   private
 
   def require_status!(expected, message)

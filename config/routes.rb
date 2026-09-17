@@ -46,6 +46,7 @@ Rails.application.routes.draw do
     post "/operator/quiz/close", to: "operator_quiz#close"
     post "/operator/quiz/reveal", to: "operator_quiz#reveal"
     post "/operator/quiz/finish", to: "operator_quiz#finish"
+    post "/operator/quiz/reset", to: "operator_quiz#reset"
 
     get "/participant/quiz/state", to: "participant_quiz#state"
     post "/participant/quiz/answers", to: "participant_quiz#create"

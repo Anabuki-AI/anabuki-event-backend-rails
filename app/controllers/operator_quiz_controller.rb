@@ -37,6 +37,16 @@ class OperatorQuizController < ApplicationController
     render json: quiz_state
   end
 
+  # Debug-only: forces the session back to waiting and wipes participant
+  # answers so operators can replay the whole quiz during testing.
+  def reset
+    ActiveRecord::Base.transaction do
+      QuizSession.current.reset!
+      ParticipantAnswer.delete_all
+    end
+    render json: quiz_state
+  end
+
   private
 
   # Single serializer shared by GET state and every POST transition, matching
