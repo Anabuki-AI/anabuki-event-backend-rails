@@ -2,7 +2,7 @@
 
 ## Confirmed implementation
 
-- `cloudflare/src/index.ts` uses the official `@cloudflare/containers` 0.3.7 SDK (`Container`, `getContainer`), `defaultPort = 8080`, `pingEndpoint = /health`, and `envVars` for Rails runtime secrets/vars.
+- `cloudflare/src/index.ts` uses the official `@cloudflare/containers` 0.3.7 SDK (`Container`, `getContainer`), `defaultPort = 8080`, `pingEndpoint = container/health` (host plus path, as required by the SDK), and `envVars` for Rails runtime secrets/vars.
 - `cloudflare/wrangler.jsonc` uses `image: "../Dockerfile"`; Cloudflare's Containers deploy docs require the Dockerfile path itself, not its directory. The root Dockerfile and `Gemfile.lock` remain in the Docker build context. `workers_dev: false` is set so the backend has no public workers.dev endpoint; frontend access is via the service binding. No fixed domain route is configured because DNS/domain change is intentionally out of scope.
 - Missing required Rails secrets return HTTP 503 with names only, never secret values. The Rails container is not started when configuration is incomplete. `secrets.required` is intentionally omitted: Cloudflare's current Wrangler docs say a declared required secret makes `wrangler deploy` fail when the remote Worker lacks it, and a new Worker cannot be bootstrapped with `wrangler secret put` before the first deploy. The CI uploads the Worker first, then conditionally uses configured GitHub `production` secrets with stdin-based `wrangler secret put`; unset values are skipped. Its 16 names match the Worker validation list exactly; `R2_REGION` remains a non-secret `vars` value.
 - Production CMD starts Rails only. It does not run `db:prepare` or any migration automatically.

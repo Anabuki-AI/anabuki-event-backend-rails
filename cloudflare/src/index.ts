@@ -42,7 +42,8 @@ function missingRailsEnvironment() {
 export class RailsContainer extends Container<Env> {
   defaultPort = 8080
   sleepAfter = '10m'
-  pingEndpoint = '/health'
+  // The container supervisor expects a host/path endpoint, not a path-only URL.
+  pingEndpoint = 'container/health'
   envVars = railsEnvironment()
 }
 
