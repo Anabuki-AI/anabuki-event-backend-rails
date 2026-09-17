@@ -316,6 +316,7 @@ RSpec.describe "Management authorization", type: :request do
 
     expect(response).to have_http_status(:no_content)
     expect(applicant.record.reload).to be_management_access
+    expect(applicant.record.expires_at).to be_within(1.second).of(3.weeks.from_now)
     expect(cookies[AdminAuth::SESSION_COOKIE]).to be_present
     expect(cookies[AdminAuth::APPLICANT_SESSION_COOKIE]).to be_blank
     expect(Array(response.headers.fetch("Set-Cookie")).join("\n")).to include(
