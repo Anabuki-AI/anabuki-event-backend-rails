@@ -75,7 +75,6 @@
 ```bash
 RAILS_ENV=test POSTGRES_PORT=5433 \
   DATABASE_URL="postgresql://anabuki:anabuki@localhost:5433/anabuki_event_rails_test" \
-  OPERATOR_DATABASE_URL="postgresql://anabuki:anabuki@localhost:5433/anabuki_event_operator_test" \
   bundle exec rails db:prepare
 # 同じ環境変数で
 bundle exec rspec

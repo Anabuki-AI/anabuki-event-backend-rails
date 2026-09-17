@@ -44,4 +44,4 @@ The host Ruby executable was unavailable (`ruby` not found; the WindowsApps `bun
 - `bundle exec brakeman --no-pager`: exit `0`, `19 controllers, 17 models, 1 template, 0 warnings`.
 - `git diff --check`: exit `0`.
 
-An initial full-suite attempt against a reused test database reported 12 data-contamination failures; this was not a code failure. Recreating only the local Rails/operator test databases and rerunning produced the clean result above.
+An initial full-suite attempt against a reused test database reported 12 data-contamination failures; this was not a code failure. Recreating only the local Rails test database and rerunning produced the clean result above.

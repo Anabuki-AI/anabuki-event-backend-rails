@@ -12,15 +12,6 @@ development:
     password: <%= ENV.fetch("POSTGRES_PASSWORD", "anabuki") %>
     host: <%= ENV.fetch("POSTGRES_HOST", "localhost") %>
     port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
-  operator:
-    <<: *default
-    migrations_paths: db/operator_migrate
-    database: anabuki_event_operator_development
-    username: <%= ENV.fetch("POSTGRES_USER", "anabuki") %>
-    password: <%= ENV.fetch("POSTGRES_PASSWORD", "anabuki") %>
-    host: <%= ENV.fetch("POSTGRES_HOST", "localhost") %>
-    port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
-    url: <%= ENV["OPERATOR_DATABASE_URL"].to_s.empty? ? "nil" : ENV["OPERATOR_DATABASE_URL"].inspect %>
 
 test:
   primary:
@@ -30,15 +21,6 @@ test:
     password: <%= ENV.fetch("POSTGRES_PASSWORD", "anabuki") %>
     host: <%= ENV.fetch("POSTGRES_HOST", "localhost") %>
     port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
-  operator:
-    <<: *default
-    migrations_paths: db/operator_migrate
-    database: anabuki_event_operator_test
-    username: <%= ENV.fetch("POSTGRES_USER", "anabuki") %>
-    password: <%= ENV.fetch("POSTGRES_PASSWORD", "anabuki") %>
-    host: <%= ENV.fetch("POSTGRES_HOST", "localhost") %>
-    port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
-    url: <%= ENV["OPERATOR_DATABASE_URL"].to_s.empty? ? "nil" : ENV["OPERATOR_DATABASE_URL"].inspect %>
 
 production:
   primary:
@@ -48,12 +30,3 @@ production:
     password: <%= ENV["POSTGRES_PASSWORD"] %>
     host: <%= ENV["POSTGRES_HOST"] %>
     port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
-  operator:
-    <<: *default
-    migrations_paths: db/operator_migrate
-    database: <%= ENV.fetch("OPERATOR_POSTGRES_DB", "anabuki_event_operator_production") %>
-    username: <%= ENV["POSTGRES_USER"] %>
-    password: <%= ENV["POSTGRES_PASSWORD"] %>
-    host: <%= ENV["POSTGRES_HOST"] %>
-    port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
-    url: <%= ENV["OPERATOR_DATABASE_URL"].to_s.empty? ? "nil" : ENV["OPERATOR_DATABASE_URL"].inspect %>

@@ -29,7 +29,7 @@ RSpec.describe AuditLogRecorder do
       expect { described_class.record!(type: "ADMIN_LOGGED_OUT", detail: { "nested" => {} }) }.to raise_error(ArgumentError)
     end
 
-    it "keeps only an email/sub snapshot for non-admin identities (operator database)" do
+    it "keeps only an email/sub snapshot for non-admin operator identities" do
       actor = Data.define(:id, :email, :google_sub).new(SecureRandom.uuid, "operator@example.com", "operator-sub")
       entry = described_class.record!(type: "QUESTION_CREATED", identity: actor, target_type: "QUESTION", target_id: 1)
       expect(entry.admin_identity_id).to be_nil

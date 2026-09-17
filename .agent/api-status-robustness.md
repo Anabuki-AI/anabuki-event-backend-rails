@@ -33,7 +33,7 @@
 | `git -C backend worktree add .worktree/fix/api-status-robustness -b fix/api-status-robustness origin/main` | Created this worktree and branch at `31ecd5d7f3d0532f1b4a2e0c6b28c43366574436`. | 0 |
 | `docker -v` | `Docker version 28.0.4, build b8034c0`. | 0 |
 | `ruby --version; bundle --version` | Ruby executable was not found; the bundle shim could not locate Ruby. | 127 |
-| `cd backend/.worktree/fix/api-status-robustness && docker compose --env-file .env.example run --rm -e RAILS_ENV=test -e DATABASE_URL=postgresql://anabuki:anabuki@postgres:5432/anabuki_event_rails_test -e OPERATOR_DATABASE_URL=postgresql://anabuki:anabuki@postgres:5432/anabuki_event_operator_test app sh -lc 'bundle exec rails db:prepare && bundle exec rspec spec/services/admin_api_status_spec.rb spec/requests/admin_api_status_spec.rb'` | Docker CLI was installed, but the Docker Desktop Linux Engine pipe was unavailable while resolving `postgres:16-alpine`; no container, database, spec, or external provider request was run. | 1 |
+| `cd backend/.worktree/fix/api-status-robustness && docker compose --env-file .env.example run --rm -e RAILS_ENV=test -e DATABASE_URL=postgresql://anabuki:anabuki@postgres:5432/anabuki_event_rails_test app sh -lc 'bundle exec rails db:prepare && bundle exec rspec spec/services/admin_api_status_spec.rb spec/requests/admin_api_status_spec.rb'` | Docker CLI was installed, but the Docker Desktop Linux Engine pipe was unavailable while resolving `postgres:16-alpine`; no container, database, spec, or external provider request was run. | 1 |
 | `git -C backend/.worktree/fix/api-status-robustness diff --check` | No whitespace errors. | 0 |
 
 The direct CI command that remains required in an environment with Ruby 3.4.7, bundled gems, and PostgreSQL is:

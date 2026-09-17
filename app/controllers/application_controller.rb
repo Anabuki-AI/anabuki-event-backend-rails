@@ -59,9 +59,8 @@ class ApplicationController < ActionController::API
   end
 
   # Resolves the acting identity for audit logging: the admin session identity
-  # when present, otherwise the operator manager session identity. Operator
-  # identities live in the separate operator database, so the recorder keeps
-  # only an email/sub snapshot for them (no foreign key).
+  # when present, otherwise the operator manager session identity. The recorder
+  # keeps an email/sub snapshot for operators (no audit-log foreign key).
   def audit_actor_identity
     begin
       return admin_auth.any_session!.identity

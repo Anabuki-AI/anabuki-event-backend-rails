@@ -17,8 +17,7 @@ RSpec.describe "Rankings and voting rate", type: :request do
   let!(:question1) { create_question(position: 1) }
   let!(:question2) { create_question(position: 2) }
 
-  # Operator tables live in a separate database, which transactional fixtures
-  # do not roll back; clean them before every example.
+  # Keep operator records explicit in setup for authentication scenarios.
   before do
     Operator::DeviceSession.delete_all
     Operator::Identity.delete_all

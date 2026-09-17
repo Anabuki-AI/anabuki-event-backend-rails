@@ -18,8 +18,8 @@ class AuditLogRecorder
 
       AuditLog.create!(
         event_type: type,
-        # Only admin identities live in the primary database; operator
-        # identities (separate database) contribute email/sub snapshots only.
+        # Keep the audit log decoupled from operator identity lifecycle; both
+        # identity types are stored in the primary database.
         admin_identity_id: identity.is_a?(AdminIdentity) ? identity.id : nil,
         actor_email: identity&.email,
         actor_google_sub: identity&.google_sub,

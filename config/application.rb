@@ -32,6 +32,9 @@ module AnabukiEventBackendRails
     # Que stores Active Job payloads in PostgreSQL and processes them in a separate worker.
     config.active_job.queue_adapter = :que
     config.active_record.schema_format = :sql
+    # Operator emails use Rails 8.1 Active Record Encryption. Never allow a
+    # plaintext fallback when encrypted data is expected.
+    config.active_record.encryption.support_unencrypted_data = false
 
     # API-only applications omit cookie middleware by default. Admin sessions are
     # HttpOnly, SameSite=Lax cookies, never Rails server-side browser sessions.

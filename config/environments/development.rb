@@ -1,5 +1,12 @@
 require "active_support/core_ext/integer/time"
 
+# Local-only defaults keep a fresh checkout runnable. Production keys are
+# mandatory; developers should override these with their own local values when
+# testing encrypted data across restarts.
+Rails.application.config.active_record.encryption.primary_key = ENV.fetch("ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY", "anabuki-event-development-primary-key").presence || "anabuki-event-development-primary-key"
+Rails.application.config.active_record.encryption.deterministic_key = ENV.fetch("ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY", "anabuki-event-development-deterministic-key").presence || "anabuki-event-development-deterministic-key"
+Rails.application.config.active_record.encryption.key_derivation_salt = ENV.fetch("ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT", "anabuki-event-development-key-derivation-salt").presence || "anabuki-event-development-key-derivation-salt"
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
