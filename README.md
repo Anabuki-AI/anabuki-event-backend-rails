@@ -190,9 +190,22 @@ The `secrets.required` configuration property is intentionally omitted. Cloudfla
 
 The backend config sets `workers_dev: false`; no public workers.dev endpoint or production route is configured, so the frontend `BACKEND` service binding is the intended Worker-to-Worker path. Fixed-domain routes/custom domains are intentionally unset until the approved DNS change; adding a route later is a separate reviewed configuration operation. Secret registration, database creation/migration, and a real deployment are intentionally outside this change.
 
-### Explicit database migration procedure
+### Production database migration workflow
 
-`Dockerfile` does not run a migration during boot. The supported procedure is an approved local workstation or an approved/manual CI job with the exact backend commit checked out and `RAILS_ENV=production`, `DATABASE_URL`, and all three encryption keys injected by an approved secret manager. Do **not** depend on a Containers `exec` command or an unauthenticated migration RPC. Wrangler 4.133.0 exposes `containers ssh`, but SSH is not required for the migration path.
+The preferred production migration path is the manually dispatched `.github/workflows/production-migration.yml` workflow from the `main` branch. It uses the GitHub `production` Environment secrets and does not load `.env`. The workflow uses the single primary `DATABASE_URL`; `OPERATOR_DATABASE_URL` is intentionally not used.
+
+1. Open **Actions → Production database migration → Run workflow** and select `main`.
+2. Run `mode=status` with an empty confirmation. This runs only `bundle exec rails db:migrate:status` and prints migration state, not credentials.
+3. Review the result. Apply is allowed only when the output contains expected pending migrations and no `NO FILE` entry or other inconsistency.
+4. For the explicitly approved apply, run again with `mode=apply` and enter the exact confirmation `MIGRATE_PRODUCTION`.
+
+Apply mode takes an initial status, runs `bundle exec rails db:migrate` only when a pending migration exists, and then takes a final status. It never runs `db:prepare`, `db:create`, `db:drop`, schema loading, or a local PostgreSQL service. A non-main dispatch, incorrect confirmation, unknown migration, failed status, or failed migration stops without a retry. A non-canceling concurrency lock prevents simultaneous production migrations.
+
+The workflow passes the production boot configuration (the database URL, secret key, all three Active Record Encryption keys, Google/public URL settings, and R2 settings) through the job environment only. Secret values are never placed in workflow arguments, files, or committed source. If status shows an already-applied schema, an unknown migration, a table conflict, database inconsistency, or any failure, do not re-dispatch apply; investigate and restore/rollback through the approved database procedure.
+
+### Manual database migration fallback
+
+`Dockerfile` does not run a migration during boot. The fallback procedure is an approved local workstation or approved CI job with the exact backend commit checked out and `RAILS_ENV=production`, `DATABASE_URL`, and all three Active Record Encryption keys injected by an approved secret manager. Do **not** depend on a Containers `exec` command or an unauthenticated migration RPC. Wrangler 4.133.0 exposes `containers ssh`, but SSH is not required for the migration path.
 
 After the database owner confirms the target, backup, maintenance window, and rollback/restore plan, run the following in the backend checkout. Values must be injected without printing or committing them:
 

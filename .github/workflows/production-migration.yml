@@ -1,0 +1,149 @@
+name: Production database migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Inspect migration status or apply pending migrations"
+        required: true
+        type: choice
+        options:
+          - status
+          - apply
+        default: status
+      confirmation:
+        description: "For apply only, enter MIGRATE_PRODUCTION exactly"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: ${{ inputs.mode }} production database
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      RAILS_ENV: production
+      RAILS_LOG_LEVEL: warn
+      RAILS_MAX_THREADS: "5"
+      ACTIVE_STORAGE_SERVICE: r2
+      R2_REGION: auto
+      MODE: ${{ inputs.mode }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      # These values are read by Rails from the process environment. They are
+      # never interpolated into a command or passed as command-line arguments.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      ADMIN_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_EMAIL_ALLOWLIST }}
+      OPERATOR_EMAIL_ALLOWLIST: ${{ secrets.OPERATOR_EMAIL_ALLOWLIST }}
+      PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
+      ADMIN_FRONTEND_URL: ${{ secrets.ADMIN_FRONTEND_URL }}
+      OPERATOR_FRONTEND_URL: ${{ secrets.OPERATOR_FRONTEND_URL }}
+      GOOGLE_OAUTH_CALLBACK_URL: ${{ secrets.GOOGLE_OAUTH_CALLBACK_URL }}
+      OPERATOR_GOOGLE_OAUTH_CALLBACK_URL: ${{ secrets.OPERATOR_GOOGLE_OAUTH_CALLBACK_URL }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      # OPERATOR_DATABASE_URL is intentionally not mapped: production uses one
+      # primary database and config/database.yml has no operator database.
+    steps:
+      - name: Reject non-main dispatches
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main" || {
+            echo "::error::Production migration can only run from main."
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Validate requested operation
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            status)
+              test -z "$CONFIRMATION" || {
+                echo "::error::confirmation must be empty for status mode."
+                exit 1
+              }
+              ;;
+            apply)
+              test "$CONFIRMATION" = "MIGRATE_PRODUCTION" || {
+                echo "::error::apply requires confirmation=MIGRATE_PRODUCTION."
+                exit 1
+              }
+              ;;
+            *)
+              echo "::error::mode must be status or apply."
+              exit 1
+              ;;
+          esac
+
+      - name: Inspect or apply production migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          status_file="$RUNNER_TEMP/production-migration-status.txt"
+          apply_file="$RUNNER_TEMP/production-migration-apply.txt"
+          status_error="$RUNNER_TEMP/production-migration-status.error"
+          apply_error="$RUNNER_TEMP/production-migration-apply.error"
+
+          run_status() {
+            rm -f "$status_file" "$status_error"
+            if ! bundle exec rails db:migrate:status >"$status_file" 2>"$status_error"; then
+              echo "::error::Production migration status failed; no migration was attempted."
+              exit 1
+            fi
+            cat "$status_file"
+          }
+
+          if [ "$MODE" = "status" ]; then
+            run_status
+            exit 0
+          fi
+
+          echo "Initial production migration status:"
+          run_status
+
+          if grep -Eq 'NO FILE' "$status_file"; then
+            echo "::error::The migration status contains an unknown migration (NO FILE); apply was refused."
+            exit 1
+          fi
+
+          if ! grep -Eq '^[[:space:]]*down[[:space:]]' "$status_file"; then
+            echo "No pending production migrations; apply was not run."
+            exit 0
+          fi
+
+          echo "Pending production migrations detected; applying with rails db:migrate."
+          rm -f "$apply_file" "$apply_error"
+          if ! bundle exec rails db:migrate >"$apply_file" 2>"$apply_error"; then
+            echo "::error::Production migration failed; no retry was attempted."
+            exit 1
+          fi
+          cat "$apply_file"
+
+          echo "Final production migration status:"
+          run_status
