@@ -77,6 +77,8 @@ RSpec.describe "Participant quiz state", type: :request do
       "answered" => false,
       "my_answer" => nil,
       "correct_answer" => nil,
+      "confidence_level" => nil,
+      "confidence_locked" => false,
       "confidence_multipliers" => { "high" => 2.0, "normal" => 1.0, "low" => 0.5 }
     )
   end

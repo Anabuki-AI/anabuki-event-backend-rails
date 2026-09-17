@@ -107,6 +107,24 @@ RSpec.describe QuizSession do
     expect(question.reload.revealed_at).to be_nil
   end
 
+  it "clears locked confidence selections on reset" do
+    question = create_question(position: 1)
+    participant = Participant.create!(
+      display_name: "Player",
+      gender: "no_answer",
+      age_group: "20s",
+      student_type: "not_student",
+      agreed_terms: true
+    )
+    session = described_class.current
+    session.start!
+    session.confirm_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
+
+    session.reset!
+
+    expect(ParticipantQuizConfidenceSelection).to be_none
+  end
+
   it "stamps phase_started_at when reset! forces the session back to waiting" do
     create_question(position: 1)
     session = described_class.current

@@ -2,7 +2,7 @@ class ParticipantQuizController < ApplicationController
   ANSWER_WINDOW_ERROR = "Answers are not being accepted for this question"
 
   before_action :require_participant_session!
-  before_action :require_participant_same_origin!, only: :create
+  before_action :require_participant_same_origin!, only: [ :create, :confirm_confidence_level ]
 
   def state
     quiz_session = QuizSession.current
@@ -10,21 +10,37 @@ class ParticipantQuizController < ApplicationController
     render json: participant_quiz_state(quiz_session, current_participant)
   end
 
-  def create
-    multipliers = ConfidenceMultiplier.all_levels
-    unless multipliers.key?(params[:confidence_level])
+  # Confidence is selected before the participant sees an Lv.1-reduced answer
+  # list. The returned state is immediately usable by the polling client.
+  def confirm_confidence_level
+    confidence_level = params[:confidence_level]
+    unless ConfidenceMultiplier.all_levels.key?(confidence_level)
       return render_error("confidence_level is invalid", :unprocessable_content)
     end
 
+    quiz_session = QuizSession.current
+    quiz_session.confirm_confidence_level!(
+      participant: current_participant,
+      question_id: params[:question_id],
+      confidence_level:
+    )
+
+    render json: participant_quiz_state(quiz_session.reload, current_participant)
+  rescue QuizSession::InvalidTransition => error
+    render_error(error.message.presence || ANSWER_WINDOW_ERROR, :conflict)
+  rescue ActiveRecord::RecordInvalid => error
+    render_error(error.record.errors.full_messages.to_sentence, :unprocessable_content)
+  end
+
+  def create
     answer = QuizSession.current.record_answer!(
       participant: current_participant,
       question_id: params[:question_id],
-      choice: params[:choice],
-      confidence_level: params[:confidence_level]
+      choice: params[:choice]
     )
 
     render json: { answered: true, my_answer: my_answer_json(answer) }, status: :created
-  rescue QuizSession::InvalidTransition => error
+  rescue QuizSession::InvalidTransition, ParticipantAnswer::AlreadyRecorded => error
     render_error(error.message.presence || ANSWER_WINDOW_ERROR, :conflict)
   rescue ActiveRecord::RecordInvalid => error
     render_error(error.record.errors.full_messages.to_sentence, :unprocessable_content)
@@ -60,11 +76,15 @@ class ParticipantQuizController < ApplicationController
     # Shared with the operator state so a closing countdown is synchronized to
     # the server timestamp instead of the participant browser's start time.
     state[:phase_started_at] = quiz_session.phase_started_at&.iso8601
-    state[:question] = question_json(quiz_session.current_question) if quiz_session.current_question
+    question = quiz_session.current_question
+    selection = current_confidence_selection(question, participant)
+    state[:question] = question_json(question, selection:) if question
     my_answer = current_answer(quiz_session, participant)
     state[:answered] = my_answer.present?
     state[:my_answer] = my_answer && my_answer_json(my_answer)
-    state[:correct_answer] = quiz_session.phase == "revealed" ? quiz_session.current_question&.correct_answer : nil
+    state[:correct_answer] = quiz_session.phase == "revealed" ? question&.correct_answer : nil
+    state[:confidence_level] = selection&.confidence_level || my_answer&.confidence_level
+    state[:confidence_locked] = selection.present? || my_answer.present?
     state[:confidence_multipliers] = ConfidenceMultiplier.all_levels.transform_values { |multiplier| multiplier.confidence_multiplier.to_f }
     state
   end
@@ -73,6 +93,12 @@ class ParticipantQuizController < ApplicationController
     return nil unless quiz_session.current_question
 
     ParticipantAnswer.find_by(participant:, question: quiz_session.current_question)
+  end
+
+  def current_confidence_selection(question, participant)
+    return nil unless question
+
+    ParticipantQuizConfidenceSelection.find_by(participant:, question:)
   end
 
   def my_answer_json(answer)
@@ -85,17 +111,20 @@ class ParticipantQuizController < ApplicationController
     question.image_url
   end
 
-  def question_json(question)
+  def question_json(question, selection: nil)
+    choices = {
+      "A" => question.choice_a,
+      "B" => question.choice_b,
+      "C" => question.choice_c,
+      "D" => question.choice_d
+    }
+    choices.delete(selection.eliminated_choice) if selection&.eliminated_choice
+
     {
       question_id: question.id,
       position: question.position,
       question_text: question.question_text,
-      choices: {
-        "A" => question.choice_a,
-        "B" => question.choice_b,
-        "C" => question.choice_c,
-        "D" => question.choice_d
-      },
+      choices:,
       image_url: question_image_url(question)
     }
   end
