@@ -5,7 +5,15 @@ class AdminAuthController < ApplicationController
 
   def logout
     require_same_origin!
+    session = begin
+      admin_auth.any_session!
+    rescue AdminAuthError
+      nil
+    end
     admin_auth.logout!
+    if session && !session.applicant?
+      AuditLogRecorder.record(type: "ADMIN_LOGGED_OUT", identity: session.identity)
+    end
     head :no_content
   end
 

@@ -49,6 +49,9 @@ class AdminAuth
     source = environment_access?(identity.email) ? "ENVIRONMENT_ACCESS" : (identity.admin_enabled? ? "MANAGEMENT_ACCESS" : "APPLICANT")
     session_key = token
     upsert_device_session!(identity:, session_key:, source:)
+    if source != "APPLICANT"
+      AuditLogRecorder.record(type: "ADMIN_LOGIN_SUCCEEDED", identity:, detail: { "accessSource" => source })
+    end
     write_cookie(source == "APPLICANT" ? APPLICANT_SESSION_COOKIE : SESSION_COOKIE, session_key, source == "APPLICANT" ? APPLICANT_TTL : MANAGEMENT_TTL)
     @cookies.delete(OAUTH_STATE_COOKIE, cookie_options)
     @config.admin_frontend_url
@@ -159,6 +162,7 @@ class AdminAuth
     end
     write_cookie(SESSION_COOKIE, next_key, MANAGEMENT_TTL)
     @cookies.delete(APPLICANT_SESSION_COOKIE, cookie_options)
+    AuditLogRecorder.record(type: "ADMIN_ACCESS_EXCHANGED", identity: session.identity)
   end
 
   def management_accesses!

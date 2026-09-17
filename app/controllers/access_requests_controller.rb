@@ -31,6 +31,13 @@ class AccessRequestsController < ApplicationController
     require_same_origin!
     authorize_admin!(AdminAccessRequest, approved ? :approve? : :reject?)
     request = admin_auth.decide_access_request!(id: positive_id!, approved:)
+    AuditLogRecorder.record(
+      type: approved ? "ACCESS_REQUEST_APPROVED" : "ACCESS_REQUEST_REJECTED",
+      identity: pundit_user.identity,
+      target_type: "ADMIN_ACCESS_REQUEST",
+      target_id: request.id,
+      detail: { "requestEmail" => request.email }
+    )
     render json: request_json(request)
   end
 
