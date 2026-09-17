@@ -49,6 +49,10 @@ Rails.application.routes.draw do
     get "/participant/quiz/state", to: "participant_quiz#state"
     post "/participant/quiz/answers", to: "participant_quiz#create"
 
+    get "/rankings", to: "rankings#index"
+
+    get "/operator/voting-rate", to: "operator_voting_rate#index"
+
     get "/admin/operator-identities", to: "operator_management_accesses#index"
     patch "/admin/operator-identities/:id", to: "operator_management_accesses#update"
   end
