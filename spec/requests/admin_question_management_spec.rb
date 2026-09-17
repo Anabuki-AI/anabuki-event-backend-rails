@@ -190,6 +190,41 @@ RSpec.describe "Admin question management", type: :request do
     expect(response.parsed_body.fetch("points")).to eq(75)
   end
 
+  it "recalculates only the edited question's scores after the quiz has finished" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    ConfidenceMultiplier.all_levels
+    question = Question.create!(question_attributes(position: 1).merge(points: 100))
+    other_question = Question.create!(question_attributes(position: 2).merge(points: 100))
+    correct_before_edit = create_participant_answer(question:, choice: "A", confidence_level: "high")
+    correct_after_edit = create_participant_answer(question:, choice: "B", confidence_level: "low")
+    unaffected_choice = create_participant_answer(question:, choice: "C", confidence_level: "normal")
+    unrelated_answer = create_participant_answer(question: other_question, choice: "A", confidence_level: "normal")
+    unaffected_updated_at = unaffected_choice.updated_at
+    unrelated_updated_at = unrelated_answer.updated_at
+    QuizSession.current.update!(status: "finished")
+
+    put "/api/admin/questions/#{question.id}", params: question_payload(correct_answer: "B").merge(points: 240), as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(correct_before_edit.reload.awarded_points).to eq(0)
+    expect(correct_after_edit.reload.awarded_points).to eq(120)
+    expect(unaffected_choice.reload).to have_attributes(awarded_points: 0, updated_at: unaffected_updated_at)
+    expect(unrelated_answer.reload).to have_attributes(awarded_points: 100, updated_at: unrelated_updated_at)
+  end
+
+  it "does not rewrite answer scores when only non-scoring question fields change" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    ConfidenceMultiplier.all_levels
+    question = Question.create!(question_attributes(position: 1))
+    answer = create_participant_answer(question:, choice: "A", confidence_level: "normal")
+    answer_updated_at = answer.updated_at
+
+    put "/api/admin/questions/#{question.id}", params: question_payload(question_text: "Updated text"), as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(answer.reload).to have_attributes(awarded_points: 100, updated_at: answer_updated_at)
+  end
+
   it "creates and updates a question's time_limit_seconds, treating it as optional and nullable" do
     authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
 
@@ -333,6 +368,17 @@ RSpec.describe "Admin question management", type: :request do
       position:, question_text: "Question", choice_a: "選択肢A", choice_b: "選択肢B",
       choice_c: "選択肢C", choice_d: "選択肢D", correct_answer: "A"
     }
+  end
+
+  def create_participant_answer(question:, choice:, confidence_level:)
+    participant = Participant.create!(
+      display_name: "Player #{SecureRandom.hex(4)}",
+      gender: "no_answer",
+      age_group: "20s",
+      student_type: "not_student",
+      agreed_terms: true
+    )
+    ParticipantAnswer.record!(participant:, question:, choice:, confidence_level:)
   end
 
   def same_origin_headers
