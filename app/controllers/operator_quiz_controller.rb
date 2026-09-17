@@ -54,10 +54,13 @@ class OperatorQuizController < ApplicationController
   # included here; the participant API exposes it only while revealed.
   def quiz_state
     quiz_session = QuizSession.current
+    current_question = quiz_session.current_question
     {
       status: quiz_session.status,
       phase: quiz_session.phase,
-      current: quiz_session.current_question && current_question_json(quiz_session.current_question),
+      phase_started_at: quiz_session.phase_started_at&.iso8601,
+      current: current_question && current_question_json(current_question),
+      next_question: current_question && next_question_json(current_question),
       question_count: Question.count,
       total_participants: Participant.count
     }
@@ -78,8 +81,31 @@ class OperatorQuizController < ApplicationController
       },
       image_url: question.image_url,
       correct_answer: question.correct_answer,
+      time_limit_seconds: question.time_limit_seconds,
       answered_count:,
       answered_rate: answered_rate(answered_count, total_participants)
+    }
+  end
+
+  # Preview of the question that will follow the current one, so the operator
+  # UI can show a "next up" card. Deliberately omits correct_answer (and the
+  # answered_count/answered_rate stats, which only make sense once a question
+  # is actually live) to keep answers hidden until a question is published.
+  def next_question_json(question)
+    next_question = Question.find_by(position: question.position + 1)
+    return nil unless next_question
+
+    {
+      question_id: next_question.id,
+      position: next_question.position,
+      question_text: next_question.question_text,
+      choices: {
+        "A" => next_question.choice_a,
+        "B" => next_question.choice_b,
+        "C" => next_question.choice_c,
+        "D" => next_question.choice_d
+      },
+      image_url: next_question.image_url
     }
   end
 
