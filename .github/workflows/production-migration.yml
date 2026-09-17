@@ -105,27 +105,103 @@ jobs:
         run: |
           set -euo pipefail
 
+          inventory_file="$RUNNER_TEMP/production-database-inventory.txt"
+          inventory_error="$RUNNER_TEMP/production-database-inventory.error"
           status_file="$RUNNER_TEMP/production-migration-status.txt"
-          apply_file="$RUNNER_TEMP/production-migration-apply.txt"
           status_error="$RUNNER_TEMP/production-migration-status.error"
+          apply_file="$RUNNER_TEMP/production-migration-apply.txt"
           apply_error="$RUNNER_TEMP/production-migration-apply.error"
+          preflight_state=""
+
+          run_preflight() {
+            rm -f "$inventory_file" "$inventory_error"
+            if bundle exec rails runner script/production_database_inventory.rb \
+              >"$inventory_file" 2>"$inventory_error"; then
+              preflight_exit=0
+            else
+              preflight_exit=$?
+            fi
+
+            case "$preflight_exit" in
+              0)
+                cat "$inventory_file"
+                preflight_state="ready"
+                ;;
+              10)
+                cat "$inventory_file"
+                preflight_state="initial"
+                ;;
+              21)
+                cat "$inventory_file"
+                echo "::error::Production database has public tables but no schema_migrations; migration was refused."
+                return 1
+                ;;
+              22)
+                cat "$inventory_file"
+                echo "::error::Production database contains an unexpected public table; migration was refused."
+                return 1
+                ;;
+              *)
+                echo "::error::Production database preflight failed; no migration was attempted."
+                return 1
+                ;;
+            esac
+          }
 
           run_status() {
             rm -f "$status_file" "$status_error"
-            if ! bundle exec rails db:migrate:status >"$status_file" 2>"$status_error"; then
-              echo "::error::Production migration status failed; no migration was attempted."
+            if bundle exec rails db:migrate:status >"$status_file" 2>"$status_error"; then
+              cat "$status_file"
+              return 0
+            fi
+            echo "::error::Production migration status failed; no migration was attempted."
+            return 1
+          }
+
+          run_migration() {
+            rm -f "$apply_file" "$apply_error"
+            if bundle exec rails db:migrate >"$apply_file" 2>"$apply_error"; then
+              cat "$apply_file"
+              return 0
+            fi
+            echo "::error::Production migration failed; no retry was attempted."
+            return 1
+          }
+
+          if ! run_preflight; then
+            exit 1
+          fi
+
+          if [ "$preflight_state" = "initial" ]; then
+            echo "initial database: schema_migrations absent"
+            if [ "$MODE" = "status" ]; then
+              exit 0
+            fi
+
+            echo "Empty initial database confirmed; applying with rails db:migrate."
+            if ! run_migration; then
               exit 1
             fi
-            cat "$status_file"
-          }
+
+            echo "Final production migration inventory:"
+            if ! run_preflight || [ "$preflight_state" != "ready" ]; then
+              echo "::error::Post-migration database preflight did not find schema_migrations."
+              exit 1
+            fi
+            echo "Final production migration status:"
+            run_status
+            exit $?
+          fi
 
           if [ "$MODE" = "status" ]; then
             run_status
-            exit 0
+            exit $?
           fi
 
           echo "Initial production migration status:"
-          run_status
+          if ! run_status; then
+            exit 1
+          fi
 
           if grep -Eq 'NO FILE' "$status_file"; then
             echo "::error::The migration status contains an unknown migration (NO FILE); apply was refused."
@@ -138,12 +214,14 @@ jobs:
           fi
 
           echo "Pending production migrations detected; applying with rails db:migrate."
-          rm -f "$apply_file" "$apply_error"
-          if ! bundle exec rails db:migrate >"$apply_file" 2>"$apply_error"; then
-            echo "::error::Production migration failed; no retry was attempted."
+          if ! run_migration; then
             exit 1
           fi
-          cat "$apply_file"
 
+          echo "Final production migration inventory:"
+          if ! run_preflight || [ "$preflight_state" != "ready" ]; then
+            echo "::error::Post-migration database preflight did not find schema_migrations."
+            exit 1
+          fi
           echo "Final production migration status:"
           run_status
