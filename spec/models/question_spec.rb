@@ -39,6 +39,26 @@ RSpec.describe Question do
     expect(question.errors).to include(:position, :question_text, :choice_a, :correct_answer, :image_url)
   end
 
+  it "defaults points to 100 and validates it is within range" do
+    question = described_class.create!(valid_attributes)
+    expect(question.points).to eq(100)
+
+    question.points = 0
+    expect(question).not_to be_valid
+    expect(question.errors).to include(:points)
+
+    question.points = described_class::MAX_POINTS + 1
+    expect(question).not_to be_valid
+    expect(question.errors).to include(:points)
+
+    question.points = nil
+    expect(question).not_to be_valid
+    expect(question.errors).to include(:points)
+
+    question.points = described_class::MIN_POINTS
+    expect(question).to be_valid
+  end
+
   it "requires a unique positive integer position" do
     described_class.create!(valid_attributes)
     duplicate = described_class.new(valid_attributes.merge(question_text: "別の問題"))

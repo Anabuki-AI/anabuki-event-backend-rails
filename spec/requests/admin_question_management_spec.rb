@@ -27,7 +27,7 @@ RSpec.describe "Admin question management", type: :request do
     first = response.parsed_body
     expect(first).to include(
       "position" => 1, "questionText" => "最初の問題", "choiceA" => "選択肢A",
-      "correctAnswer" => "A", "imageUrl" => "https://example.com/one.png"
+      "correctAnswer" => "A", "imageUrl" => "https://example.com/one.png", "points" => 100
     )
     expect(first).to include("id", "choiceB", "choiceC", "choiceD", "createdAt", "updatedAt")
 
@@ -154,6 +154,40 @@ RSpec.describe "Admin question management", type: :request do
       question_text: "Question", choice_a: "選択肢A", choice_b: "選択肢B",
       choice_c: "選択肢C", choice_d: "選択肢D", correct_answer: "A", image_url: nil
     )
+  end
+
+  it "creates and updates a question's points, rejecting out-of-range or non-numeric values" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post "/api/admin/questions", params: question_payload.merge(points: 250), as: :json
+    expect(response).to have_http_status(:created)
+    created = response.parsed_body
+    expect(created.fetch("points")).to eq(250)
+
+    put "/api/admin/questions/#{created.fetch('id')}", params: question_payload.merge(points: 1), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("points")).to eq(1)
+
+    put "/api/admin/questions/#{created.fetch('id')}", params: question_payload.merge(points: 0), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("points")
+
+    put "/api/admin/questions/#{created.fetch('id')}", params: question_payload.merge(points: Question::MAX_POINTS + 1), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("points")
+
+    put "/api/admin/questions/#{created.fetch('id')}", params: question_payload.merge(points: "not-a-number"), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to eq("points" => "must be a whole number")
+
+    put "/api/admin/questions/#{created.fetch('id')}", params: question_payload.merge(points: { nested: "object" }), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to eq("points" => "must be a whole number")
+
+    # multipart submissions (used when uploading an image) send points as a numeric string.
+    post "/api/admin/questions", params: question_payload.merge(points: "75")
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.fetch("points")).to eq(75)
   end
 
   it "enforces same-origin protection and permits PUT/PATCH CORS preflight" do

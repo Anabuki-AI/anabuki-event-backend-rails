@@ -9,6 +9,8 @@ class Question < ApplicationRecord
   ALLOWED_IMAGE_CONTENT_TYPES = %w[image/png image/jpeg image/webp image/gif].freeze
   MAX_IMAGE_BYTE_SIZE = 5.megabytes
   POSITION_LOCK_KEY = 6_813_271_904
+  MIN_POINTS = 1
+  MAX_POINTS = 1000
 
   has_one_attached :image
 
@@ -16,6 +18,8 @@ class Question < ApplicationRecord
   validates :choice_a, :choice_b, :choice_c, :choice_d, presence: true, length: { maximum: MAX_CHOICE_LENGTH }
   validates :correct_answer, inclusion: { in: %w[A B C D] }
   validates :position, numericality: { only_integer: true, greater_than: 0 }, uniqueness: true
+  validates :points, presence: true,
+    numericality: { only_integer: true, greater_than_or_equal_to: MIN_POINTS, less_than_or_equal_to: MAX_POINTS }
   validates :image_url, length: { maximum: MAX_IMAGE_URL_LENGTH }, allow_nil: true
   validates :explanation, length: { maximum: MAX_EXPLANATION_LENGTH }, allow_nil: true
   validates :target_audience, length: { maximum: MAX_TARGET_AUDIENCE_LENGTH }, allow_nil: true

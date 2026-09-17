@@ -10,7 +10,8 @@ class AdminQuestionsController < ApplicationController
     image: "image",
     explanation: "explanation",
     target_audience: "targetAudience",
-    position: "position"
+    position: "position",
+    points: "points"
   }.freeze
 
   def index
@@ -99,6 +100,7 @@ class AdminQuestionsController < ApplicationController
     attributes[:image_url] = parameter_value(:imageUrl, :image_url) if image_url_provided?
     attributes[:explanation] = parameter_value(:explanation) if parameter_provided?(:explanation)
     attributes[:target_audience] = parameter_value(:targetAudience, :target_audience) if parameter_provided?(:targetAudience, :target_audience)
+    attributes[:points] = Integer(parameter_value(:points)) if points_provided?
     attributes
   end
 
@@ -124,6 +126,20 @@ class AdminQuestionsController < ApplicationController
     params.key?(:imageUrl) || params.key?(:image_url)
   end
 
+  def points_provided?
+    params.key?(:points)
+  end
+
+  # multipart form submissions arrive as numeric strings ("100"); JSON bodies
+  # may arrive as an Integer already. Anything else (object/array/bool/decimal
+  # string) is rejected before it can reach Integer() or the DB column cast.
+  def points_parameter_valid?(value)
+    return true if value.is_a?(Integer)
+    return false unless value.is_a?(String)
+
+    value.strip.match?(/\A-?\d+\z/)
+  end
+
   def render_question_parameter_type_errors
     field_errors = question_parameter_type_errors
     return false if field_errors.empty?
@@ -145,9 +161,12 @@ class AdminQuestionsController < ApplicationController
     values["explanation"] = parameter_value(:explanation) if parameter_provided?(:explanation)
     values["targetAudience"] = parameter_value(:targetAudience, :target_audience) if parameter_provided?(:targetAudience, :target_audience)
 
-    values.each_with_object({}) do |(field, value), errors|
-      errors[field] = "must be a string" unless value.nil? || value.is_a?(String)
+    errors = values.each_with_object({}) do |(field, value), result|
+      result[field] = "must be a string" unless value.nil? || value.is_a?(String)
     end
+
+    errors["points"] = "must be a whole number" if points_provided? && !points_parameter_valid?(parameter_value(:points))
+    errors
   end
 
   def render_question_validation_error(question)
@@ -171,6 +190,7 @@ class AdminQuestionsController < ApplicationController
       imageUrl: question_image_url(question),
       explanation: question.explanation,
       targetAudience: question.target_audience,
+      points: question.points,
       createdAt: question.created_at.iso8601,
       updatedAt: question.updated_at.iso8601
     }
