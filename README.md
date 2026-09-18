@@ -128,6 +128,7 @@ POST /api/admin/questions
 GET/PUT/DELETE /api/admin/questions/:id
 GET  /api/admin/confidence-multipliers
 PATCH /api/admin/confidence-multipliers/:level
+POST /api/operator/quiz/reset
 ```
 
 ### 問題管理 API
@@ -137,6 +138,12 @@ PATCH /api/admin/confidence-multipliers/:level
 問題の作成・更新には `questionText`、`choiceA`〜`choiceD`、`correctAnswer` (`A`〜`D`) を JSON で送り、任意の `imageUrl` は `null` または HTTP(S) URL にします。レスポンスは `id`、`position`、上記の問題フィールド、`imageUrl`、`createdAt`、`updatedAt` を返します。入力検証エラーは `422 { "error": "...", "fieldErrors": { "questionText": "..." } }` です。初期の編集画面互換として、作成・更新では `choices: { A, B, C, D }` と `correctChoice` も受け付けます。
 
 自信度倍率は `GET /api/admin/confidence-multipliers` で常に `{ "high": "2.00", "normal": "1.00", "low": "0.50" }` 形式（更新済みの値を含む）を返します。`PATCH /api/admin/confidence-multipliers/:level` は `{ "confidenceMultiplier": number }` を受け、`high`、`normal`、`low` のいずれかを 0〜9.99・小数第2位までで更新します。
+
+### 本番トーナメントリセット
+
+`POST /api/operator/quiz/reset` は既存の event operator/admin 管理セッション、許可済み Origin、および JSON body の完全一致確認値 `{ "confirmation": "RESET" }` を必須とします。確認値が無い、`CANCEL`、小文字などの場合は `422` で、参加者・クイズ状態・監査ログを変更しません。監査 actor は認可時に実際に選択された管理セッションへ固定されるため、admin applicant Cookie と operator manager Cookie が同時にある場合も operator manager が記録されます。
+
+成功時は単一 DB transaction で、通常の参加者書き込みと同じ `participants` → `participant_sessions` → `participant_reactions` のロック順序を使い、参加者、参加者セッション、リアクション、回答、自信度選択を削除し、クイズを `waiting` に戻して全問題の公開時刻を消去します。問題内容、添付、倍率等の設定、管理者・運営者、既存監査ログは保持します。同じ transaction で `TOURNAMENT_RESET` 監査イベントを作成し、必須の actor email/Google subject snapshot、UUID operation ID、開始/完了時刻、PII を含まないテーブル別件数を保存します。成功レスポンスの最上位 quiz state は transaction 内で取得した reset 直後の snapshot であり、commit 後の再問い合わせ結果ではありません。完全な request/response と監査契約は [`.agent/tournament-reset.md`](.agent/tournament-reset.md) を参照してください。
 
 ## Configuration
 

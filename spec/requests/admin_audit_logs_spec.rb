@@ -59,6 +59,35 @@ RSpec.describe "Admin audit logs API", type: :request do
     expect(response.parsed_body.fetch("entries").map { |entry| entry.fetch("id") }).to eq([ oldest.id.to_s ])
   end
 
+  it "exposes durable tournament reset operation metadata" do
+    started_at = Time.current
+    operation_id = SecureRandom.uuid
+    AuditLog.create!(
+      event_type: "TOURNAMENT_RESET",
+      admin_identity: manager.identity,
+      actor_email: manager.identity.email,
+      actor_google_sub: manager.identity.google_sub,
+      target_type: "TOURNAMENT",
+      target_id: operation_id,
+      operation_id:,
+      operation_started_at: started_at,
+      operation_completed_at: started_at + 1.second,
+      occurred_at: started_at + 1.second,
+      detail: { "participantsDeleted" => 2 }
+    )
+
+    get "/api/admin/audit-logs", params: { type: "TOURNAMENT_RESET" }
+
+    expect(response).to have_http_status(:ok)
+    entry = response.parsed_body.fetch("entries").sole
+    expect(entry).to include(
+      "operationId" => operation_id,
+      "operationStartedAt" => started_at.iso8601(6),
+      "operationCompletedAt" => (started_at + 1.second).iso8601(6),
+      "detail" => { "participantsDeleted" => 2 }
+    )
+  end
+
   it "paginates with offset and echoes the requested page" do
     3.times { create_entry("ADMIN_LOGGED_OUT") }
 

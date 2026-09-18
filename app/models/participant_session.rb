@@ -8,17 +8,21 @@ class ParticipantSession < ApplicationRecord
   validates :token_hash, presence: true, length: { is: 32 }
   validates :expires_at, presence: true
 
-  # Locks this session row so concurrent requests cannot both pass the cooldown
-  # check and create reaction events.
+  # Participant-owned writes use the canonical participants -> sessions ->
+  # reactions lock order shared with registration and tournament reset. The
+  # participant row lock also keeps a reset from deleting it between session
+  # authorization and the reaction insert.
   def record_reaction(reaction:)
     self.class.transaction do
+      reacting_participant = participant
+      reacting_participant.lock!
       lock!
       reacted_at = Time.current
 
       if reaction_rate_limited?(at: reacted_at)
         nil
       else
-        event = participant_reactions.create!(participant:, reaction:, reacted_at:)
+        event = participant_reactions.create!(participant: reacting_participant, reaction:, reacted_at:)
         update!(last_reaction_at: reacted_at)
         event
       end

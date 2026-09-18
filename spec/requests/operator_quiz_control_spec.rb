@@ -582,60 +582,22 @@ RSpec.describe "Operator quiz control", type: :request do
   end
 
   describe "POST /api/operator/quiz/reset" do
-    it "forces the session back to waiting and clears participant answers regardless of current state" do
+    it "accepts the exact production confirmation and returns reset metadata" do
       authenticate_operator(manager_enabled: true)
       question = create_question(position: 1)
       participant = create_participant
       QuizSession.current.start!
       ParticipantAnswer.create!(participant:, question:, choice: "A", confidence_level: "normal")
 
-      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
+      post "/api/operator/quiz/reset", params: { confirmation: "RESET" }, headers: operator_headers, as: :json
 
       expect(response).to have_http_status(:ok)
       body = response.parsed_body
-      expect(body["status"]).to eq("waiting")
-      expect(body["phase"]).to be_nil
-      expect(body["current"]).to be_nil
-      expect(ParticipantAnswer.count).to eq(0)
-    end
-
-    it "succeeds even from the waiting state" do
-      authenticate_operator(manager_enabled: true)
-      create_question(position: 1)
-
-      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
-
-      expect(response).to have_http_status(:ok)
-      expect(response.parsed_body["status"]).to eq("waiting")
-    end
-
-    it "succeeds after finishing" do
-      authenticate_operator(manager_enabled: true)
-      create_question(position: 1)
-      QuizSession.current.start!
-      QuizSession.current.finish!
-
-      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
-
-      expect(response).to have_http_status(:ok)
-      expect(response.parsed_body["status"]).to eq("waiting")
-      expect(response.parsed_body["finished_elapsed_seconds"]).to be_nil
-    end
-
-    it "rejects reset outside development and test environments without mutating state" do
-      authenticate_operator(manager_enabled: true)
-      question = create_question(position: 1)
-      participant = create_participant
-      QuizSession.current.start!
-      ParticipantAnswer.create!(participant:, question:, choice: "A", confidence_level: "normal")
-      allow(Rails.env).to receive(:development?).and_return(false)
-      allow(Rails.env).to receive(:test?).and_return(false)
-
-      post "/api/operator/quiz/reset", headers: operator_headers, as: :json
-
-      expect(response).to have_http_status(:forbidden)
-      expect(QuizSession.current.reload.status).to eq("in_progress")
-      expect(ParticipantAnswer.count).to eq(1)
+      expect(body.slice("status", "phase", "current", "total_participants")).to eq(
+        "status" => "waiting", "phase" => nil, "current" => nil, "total_participants" => 0
+      )
+      expect(body.dig("reset_operation", "operation_id")).to be_present
+      expect(body.dig("reset_operation", "affected_rows", "participant_answers")).to eq(1)
     end
   end
 

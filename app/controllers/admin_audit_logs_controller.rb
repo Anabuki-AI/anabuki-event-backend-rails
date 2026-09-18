@@ -73,6 +73,9 @@ class AdminAuditLogsController < ApplicationController
       actorGoogleSub: entry.actor_google_sub,
       targetType: entry.target_type,
       targetId: entry.target_id,
+      operationId: entry.operation_id,
+      operationStartedAt: entry.operation_started_at&.iso8601(6),
+      operationCompletedAt: entry.operation_completed_at&.iso8601(6),
       detail: entry.detail,
       occurredAt: entry.occurred_at.iso8601
     }

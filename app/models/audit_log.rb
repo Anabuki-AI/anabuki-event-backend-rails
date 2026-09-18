@@ -15,19 +15,34 @@ class AuditLog < ApplicationRecord
     MANAGEMENT_ACCESS_REVOKED
     OPERATOR_ACCESS_GRANTED
     OPERATOR_ACCESS_REVOKED
+    TOURNAMENT_RESET
   ].freeze
 
   belongs_to :admin_identity, optional: true
 
   validates :event_type, presence: true, inclusion: { in: EVENT_TYPES }
   validates :occurred_at, presence: true
+  validates :operation_id, :operation_started_at, :operation_completed_at,
+    :actor_email, :actor_google_sub, presence: true, if: :tournament_reset?
   validate :detail_contains_only_safe_scalars
+  validate :operation_timestamps_are_ordered
 
   private
 
   # The contract requires detail to be presentation-safe: scalar values only,
   # never credentials or blobs. Enforced here as a last line of defense; the
   # recorder sanitizes before writing.
+  def tournament_reset?
+    event_type == "TOURNAMENT_RESET"
+  end
+
+  def operation_timestamps_are_ordered
+    return unless operation_started_at && operation_completed_at
+    return if operation_completed_at >= operation_started_at
+
+    errors.add(:operation_completed_at, "must not be earlier than operation_started_at")
+  end
+
   def detail_contains_only_safe_scalars
     return if detail.is_a?(Hash) && detail.values.all? { |value| safe_scalar?(value) }
 

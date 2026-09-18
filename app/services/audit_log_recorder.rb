@@ -6,14 +6,19 @@ class AuditLogRecorder
   SCALAR_TYPES = [ String, Numeric, TrueClass, FalseClass, NilClass ].freeze
 
   class << self
-    def record(type:, identity: nil, target_type: nil, target_id: nil, detail: {})
-      record!(type:, identity:, target_type:, target_id:, detail:)
+    def record(type:, identity: nil, target_type: nil, target_id: nil, detail: {}, operation_id: nil,
+      operation_started_at: nil, operation_completed_at: nil, occurred_at: Time.current)
+      record!(
+        type:, identity:, target_type:, target_id:, detail:, operation_id:,
+        operation_started_at:, operation_completed_at:, occurred_at:
+      )
     rescue StandardError => error
       Rails.logger.warn("[audit_log] failed to record #{type}: #{error.class}: #{error.message}")
       nil
     end
 
-    def record!(type:, identity: nil, target_type: nil, target_id: nil, detail: {})
+    def record!(type:, identity: nil, target_type: nil, target_id: nil, detail: {}, operation_id: nil,
+      operation_started_at: nil, operation_completed_at: nil, occurred_at: Time.current)
       raise ArgumentError, "unknown audit log type: #{type.inspect}" unless AuditLog::EVENT_TYPES.include?(type)
 
       AuditLog.create!(
@@ -26,7 +31,10 @@ class AuditLogRecorder
         target_type:,
         target_id: target_id.nil? ? nil : target_id.to_s,
         detail: sanitize_detail(detail),
-        occurred_at: Time.current
+        operation_id:,
+        operation_started_at:,
+        operation_completed_at:,
+        occurred_at:
       )
     end
 

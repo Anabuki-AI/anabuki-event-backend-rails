@@ -23,6 +23,31 @@ RSpec.describe AuditLogRecorder do
       expect(entry.detail).to eq("questionId" => 7, "position" => 1)
     end
 
+    it "writes tournament operation identifiers and timestamps without nesting row counts" do
+      actor = Data.define(:email, :google_sub).new("operator@example.com", "operator-sub")
+      started_at = Time.current
+      completed_at = started_at + 1.second
+      operation_id = SecureRandom.uuid
+
+      entry = described_class.record!(
+        type: "TOURNAMENT_RESET",
+        identity: actor,
+        target_type: "TOURNAMENT",
+        target_id: operation_id,
+        operation_id:,
+        operation_started_at: started_at,
+        operation_completed_at: completed_at,
+        occurred_at: completed_at,
+        detail: { participantsDeleted: 3 }
+      )
+
+      expect(entry.operation_id).to eq(operation_id)
+      expect(entry.operation_started_at).to be_within(0.000001.seconds).of(started_at)
+      expect(entry.operation_completed_at).to be_within(0.000001.seconds).of(completed_at)
+      expect(entry.occurred_at).to be_within(0.000001.seconds).of(completed_at)
+      expect(entry.detail).to eq("participantsDeleted" => 3)
+    end
+
     it "rejects unknown types, non-hash detail, and non-scalar values" do
       expect { described_class.record!(type: "MYSTERY") }.to raise_error(ArgumentError)
       expect { described_class.record!(type: "ADMIN_LOGGED_OUT", detail: "nope") }.to raise_error(ArgumentError)

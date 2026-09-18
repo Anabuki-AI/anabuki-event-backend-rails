@@ -38,10 +38,10 @@ class ApplicationController < ActionController::API
   # a second operator cookie, while operator-only users retain full access to
   # the operational screens.
   def authorize_event_operator!
-    admin_auth.management_session!("MANAGEMENT_PAGE_VIEW")
+    @authorized_event_operator_session = admin_auth.management_session!("MANAGEMENT_PAGE_VIEW")
   rescue AdminAuthError => admin_error
     begin
-      operator_auth.manager_session!
+      @authorized_event_operator_session = operator_auth.manager_session!
     rescue OperatorAuthError
       raise admin_error
     end
@@ -58,20 +58,14 @@ class ApplicationController < ActionController::API
     send_data question.image.download, type: question.image.content_type, disposition: "inline"
   end
 
-  # Resolves the acting identity for audit logging: the admin session identity
-  # when present, otherwise the operator manager session identity. The recorder
-  # keeps an email/sub snapshot for operators (no audit-log foreign key).
+  # Audit attribution must use the exact session selected by
+  # authorize_event_operator!. Re-resolving cookies here could incorrectly
+  # prefer an admin applicant over the operator manager that authorized access.
   def audit_actor_identity
-    begin
-      return admin_auth.any_session!.identity
-    rescue AdminAuthError
-      nil
-    end
-    begin
-      operator_auth.manager_session!.identity
-    rescue OperatorAuthError
-      nil
-    end
+    session = @authorized_event_operator_session
+    raise "event operator authorization must run before audit actor resolution" unless session
+
+    session.identity
   end
 
   def require_same_origin!(config: admin_auth_config)

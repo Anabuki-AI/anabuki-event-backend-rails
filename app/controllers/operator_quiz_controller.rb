@@ -42,14 +42,20 @@ class OperatorQuizController < ApplicationController
     render json: quiz_state
   end
 
-  # Debug-only: forces the session back to waiting and wipes participant
-  # answers so operators can replay the whole quiz during testing. This is
-  # intentionally unavailable outside development/test environments.
+  # Production-safe destructive reset. Authorization and same-origin checks run
+  # before the exact server-side confirmation value is evaluated.
   def reset
-    return render_error("Quiz reset is disabled in this environment", :forbidden) unless reset_allowed?
-
-    QuizSession.current.reset!
-    render json: quiz_state
+    result = TournamentReset.call!(actor: audit_actor_identity, confirmation: params[:confirmation])
+    render json: result.quiz_state.merge(
+      reset_operation: {
+        operation_id: result.operation_id,
+        started_at: result.started_at.iso8601(6),
+        completed_at: result.completed_at.iso8601(6),
+        affected_rows: result.affected_rows
+      }
+    )
+  rescue TournamentReset::InvalidConfirmation => error
+    render_error(error.message, :unprocessable_content)
   end
 
   def image
@@ -146,9 +152,5 @@ class OperatorQuizController < ApplicationController
     return if origin.blank? || operator_auth_config.allowed_origin?(origin) || admin_auth_config.allowed_origin?(origin)
 
     raise AdminAuthError.new("Origin is not allowed", :forbidden)
-  end
-
-  def reset_allowed?
-    Rails.env.development? || Rails.env.test?
   end
 end
