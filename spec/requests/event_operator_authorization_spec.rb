@@ -34,6 +34,35 @@ RSpec.describe "Event operator API authorization", type: :request do
     expect(response).to have_http_status(:ok)
   end
 
+  it "serves the management image URL to operator managers with private caching" do
+    authenticate_operator(manager_enabled: true)
+    post "/api/admin/questions", params: question_payload.merge(image: fixture_file_upload("question.webp", "image/webp"))
+    expect(response).to have_http_status(:created)
+    image_url = response.parsed_body.fetch("imageUrl")
+
+    get "/api#{image_url}"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq("image/webp")
+    expect(response.body).to eq(File.binread(Rails.root.join("spec/fixtures/files/question.webp")))
+    expect(response.headers["Cache-Control"]).to eq("private, no-store")
+
+    Operator::Identity.update_all(manager_enabled: false)
+    get "/api#{image_url}"
+    expect(response).to have_http_status(:unauthorized)
+  end
+
+  it "does not serve management images anonymously or to operator applicants" do
+    question = Question.create!(position: 1, question_text: "Question", choice_a: "A", choice_b: "B", choice_c: "C", choice_d: "D", correct_answer: "A")
+    question.image.attach(io: File.open(Rails.root.join("spec/fixtures/files/question.webp")), filename: "question.webp", content_type: "image/webp")
+
+    get "/api/admin/questions/#{question.id}/image"
+    expect(response).to have_http_status(:unauthorized)
+    authenticate_operator(manager_enabled: false)
+    get "/api/admin/questions/#{question.id}/image"
+    expect(response).to have_http_status(:unauthorized)
+  end
+
   it "does not allow an operator applicant session to use event-operation APIs" do
     authenticate_operator(manager_enabled: false)
 

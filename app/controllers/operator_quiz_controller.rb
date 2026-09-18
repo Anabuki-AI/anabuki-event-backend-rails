@@ -22,7 +22,8 @@ class OperatorQuizController < ApplicationController
 
   def close
     if params[:immediate] == true
-      # The configured per-question timer is a strict server-enforced deadline.
+      # Backward-compatible automatic expiry hint, NOT a force-close flag.
+      # The model rejects early/browser-skewed expiry using the server clock.
       QuizSession.current.close!
     else
       # A manual operator close starts the shared ten-second countdown.
@@ -66,7 +67,7 @@ class OperatorQuizController < ApplicationController
   # the Phase 0 operator contract. correct_answer is operator-only and always
   # included here; the participant API exposes it only while revealed.
   def quiz_state
-    quiz_session = QuizSession.current
+    quiz_session = QuizSession.current.close_expired_answer_window!
     current_question = quiz_session.current_question
     {
       status: quiz_session.status,

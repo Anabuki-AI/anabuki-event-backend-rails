@@ -5,7 +5,7 @@ class ParticipantQuizController < ApplicationController
   before_action :require_participant_same_origin!, only: [ :create, :confirm_confidence_level ]
 
   def state
-    quiz_session = QuizSession.current
+    quiz_session = QuizSession.current.close_expired_answer_window!
 
     render json: participant_quiz_state(quiz_session, current_participant)
   end

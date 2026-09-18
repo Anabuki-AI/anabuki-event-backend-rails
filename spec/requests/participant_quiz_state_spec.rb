@@ -1,6 +1,7 @@
 require "rails_helper"
 
 RSpec.describe "Participant quiz state", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
   around do |example|
     host! "localhost"
     example.run
@@ -131,15 +132,56 @@ RSpec.describe "Participant quiz state", type: :request do
     expect(response.parsed_body["correct_answer"]).to be_nil
   end
 
-  it "hides the correct answer while closed" do
+  it "finalizes an expired countdown on polling without a worker or answers" do
     sign_in
     QuizSession.current.start!
-    QuizSession.current.close!
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+    QuizSession.current.request_close!
+    deadline = QuizSession.current.phase_started_at + 10.seconds
 
-    get "/api/participant/quiz/state"
+    travel_to(deadline - 1.second, with_usec: true) do
+      get "/api/participant/quiz/state"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["phase"]).to eq("closing")
+    end
+    travel_to(deadline, with_usec: true) do
+      get "/api/participant/quiz/state"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("phase" => "closed", "correct_answer" => nil, "answered" => false)
+      expect(QuizSession.current.phase_started_at).to eq(deadline)
+    end
+    travel_to(deadline + 1.minute, with_usec: true) do
+      get "/api/participant/quiz/state"
+      expect(response.parsed_body["phase"]).to eq("closed")
+      expect(QuizSession.current.phase_started_at).to eq(deadline)
+    end
+  end
 
-    expect(response.parsed_body["phase"]).to eq("closed")
-    expect(response.parsed_body["correct_answer"]).to be_nil
+  it "finalizes a configured timer on polling without an operator or worker" do
+    sign_in
+    question.update!(time_limit_seconds: 5)
+    QuizSession.current.start!
+    deadline = QuizSession.current.answering_started_at + 5.seconds
+
+    travel_to(deadline, with_usec: true) do
+      get "/api/participant/quiz/state"
+      expect(response.parsed_body["phase"]).to eq("closed")
+      expect(QuizSession.current.phase_started_at).to eq(deadline)
+    end
+  end
+
+  it "hides the correct answer while closed" do
+    sign_in
+    question.update!(time_limit_seconds: 30)
+    QuizSession.current.start!
+
+    travel_to(QuizSession.current.answering_started_at + 30.seconds, with_usec: true) do
+      QuizSession.current.close!
+      get "/api/participant/quiz/state"
+
+      expect(response.parsed_body["phase"]).to eq("closed")
+      expect(response.parsed_body["correct_answer"]).to be_nil
+    end
   end
 
   it "exposes the correct answer only while revealed" do

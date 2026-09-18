@@ -229,7 +229,7 @@ RSpec.describe "Operator quiz control", type: :request do
       create_question(position: 1)
       second = create_question(position: 2)
       QuizSession.current.start!
-      QuizSession.current.close!
+      QuizSession.current.reveal!
 
       post "/api/operator/quiz/publish", headers: operator_headers, as: :json
 
@@ -256,14 +256,65 @@ RSpec.describe "Operator quiz control", type: :request do
       )
     end
 
+    %w[answering closing closed].each do |phase|
+      it "rejects publish from #{phase} without changing the question or timestamps" do
+        authenticate_operator(manager_enabled: true)
+        first = create_question(position: 1)
+        create_question(position: 2)
+        session = QuizSession.current
+        session.start!
+        unless phase == "answering"
+          allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+          session.request_close!
+        end
+        at = phase == "closed" ? session.phase_started_at + 10.seconds : Time.current
+
+        travel_to(at, with_usec: true) do
+          session.close_expired_answer_window!
+          before = session.reload.attributes
+          post "/api/operator/quiz/publish", headers: operator_headers, as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body["error"]).to eq("Reveal the current answer before publishing the next question")
+          expect(session.reload.attributes).to eq(before)
+          expect(first.reload.revealed_at).to be_nil
+        end
+      end
+    end
+
+    it "requires reveal even after a countdown expires without polling or a worker" do
+      authenticate_operator(manager_enabled: true)
+      first = create_question(position: 1)
+      second = create_question(position: 2)
+      session = QuizSession.current
+      session.start!
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+      session.request_close!
+
+      travel_to(session.phase_started_at + 10.seconds, with_usec: true) do
+        post "/api/operator/quiz/publish", headers: operator_headers, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(session.reload.current_question_id).to eq(first.id)
+
+        post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
+        expect(response).to have_http_status(:ok)
+        expect(first.reload.revealed_at).to be_present
+        post "/api/operator/quiz/publish", headers: operator_headers, as: :json
+        expect(response).to have_http_status(:ok)
+        expect(session.reload).to have_attributes(current_question_id: second.id, phase: "answering")
+      end
+    end
+
     it "rejects publish when there are no more questions" do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
       QuizSession.current.start!
+      QuizSession.current.reveal!
 
       post "/api/operator/quiz/publish", headers: operator_headers, as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to eq("There are no more questions")
     end
 
     it "rejects publish while waiting with 422" do
@@ -307,16 +358,60 @@ RSpec.describe "Operator quiz control", type: :request do
       expect(response).to have_http_status(:unprocessable_content)
     end
 
-    it "can reveal after the delayed close is finalized" do
+    it "closes on polling at the deadline with no worker or participant submissions" do
       authenticate_operator(manager_enabled: true)
       create_question(position: 1)
       QuizSession.current.start!
-      QuizSession.current.close!
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+      post "/api/operator/quiz/close", headers: operator_headers, as: :json
+      deadline = QuizSession.current.phase_started_at + 10.seconds
 
-      post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
+      travel_to(deadline - 1.second, with_usec: true) do
+        get "/api/operator/quiz/state"
+        expect(response.parsed_body["phase"]).to eq("closing")
+      end
+      travel_to(deadline, with_usec: true) do
+        get "/api/operator/quiz/state"
+        expect(response.parsed_body["phase"]).to eq("closed")
+        expect(QuizSession.current.phase_started_at).to eq(deadline)
+      end
+      travel_to(deadline + 1.minute) do
+        get "/api/operator/quiz/state"
+        expect(QuizSession.current.phase_started_at).to eq(deadline)
+      end
+    end
 
-      expect(response).to have_http_status(:ok)
-      expect(response.parsed_body["phase"]).to eq("revealed")
+    it "can reveal an expired countdown directly without a poll or worker" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      QuizSession.current.start!
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+      post "/api/operator/quiz/close", headers: operator_headers, as: :json
+
+      travel_to(QuizSession.current.phase_started_at + 10.seconds, with_usec: true) do
+        post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["phase"]).to eq("revealed")
+      end
+    end
+
+    it "can reveal after the delayed close is finalized" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1)
+      session = QuizSession.current
+      session.start!
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+      session.request_close!
+      closing_started_at = session.phase_started_at
+
+      travel_to(closing_started_at + 10.seconds, with_usec: true) do
+        session.complete_requested_close!(question_id: question.id, closing_started_at:)
+        expect(session.reload.phase).to eq("closed")
+        post "/api/operator/quiz/reveal", headers: operator_headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["phase"]).to eq("revealed")
+      end
     end
 
     it "rejects close while waiting with 422" do
@@ -326,6 +421,119 @@ RSpec.describe "Operator quiz control", type: :request do
       post "/api/operator/quiz/close", headers: operator_headers, as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
+    end
+  end
+
+  describe "POST /api/operator/quiz/close automatic expiry contract" do
+    it "rejects an early browser expiry but still allows manual close before the time limit" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1, time_limit_seconds: 30)
+      session = QuizSession.current
+      session.start!
+      started_at = session.answering_started_at
+      before = session.reload.attributes
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+
+      travel_to(started_at + 5.seconds, with_usec: true) do
+        post "/api/operator/quiz/close", params: { immediate: true }, headers: operator_headers, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq("Question time limit has not expired")
+        expect(session.reload.attributes).to eq(before)
+        expect(CloseQuizAnswersJob).not_to have_received(:set)
+
+        post "/api/operator/quiz/close", headers: operator_headers, as: :json
+        expect(response).to have_http_status(:ok)
+        expect(session.reload).to have_attributes(
+          phase: "closing", phase_started_at: started_at + 5.seconds, answering_started_at: started_at
+        )
+      end
+
+      travel_to(started_at + 15.seconds, with_usec: true) do
+        get "/api/operator/quiz/state"
+        expect(response.parsed_body["phase"]).to eq("closed")
+        expect(session.reload.phase_started_at).to eq(started_at + 15.seconds)
+      end
+    end
+
+    [ -1, 0, 7 ].each do |offset|
+      it "checks the server question deadline at #{offset} seconds from expiry" do
+        authenticate_operator(manager_enabled: true)
+        create_question(position: 1, time_limit_seconds: 30)
+        session = QuizSession.current
+        session.start!
+        deadline = session.answering_started_at + 30.seconds
+        before = session.reload.attributes
+
+        travel_to(deadline + offset.seconds, with_usec: true) do
+          post "/api/operator/quiz/close", params: { immediate: true }, headers: operator_headers, as: :json
+          if offset.negative?
+            expect(response).to have_http_status(:unprocessable_content)
+            expect(session.reload.attributes).to eq(before)
+          else
+            expect(response).to have_http_status(:ok)
+            expect(response.parsed_body["phase"]).to eq("closed")
+            expect(session.reload.phase_started_at).to eq(deadline)
+          end
+        end
+      end
+    end
+
+    it "rejects automatic expiry without a configured timer instead of treating it as manual close" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1)
+      session = QuizSession.current
+      session.start!
+      before = session.reload.attributes
+
+      post "/api/operator/quiz/close", params: { immediate: true }, headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(session.reload.attributes).to eq(before)
+    end
+
+    it "cannot bypass closing, but honors the original question limit if it expires first" do
+      authenticate_operator(manager_enabled: true)
+      create_question(position: 1, time_limit_seconds: 30)
+      session = QuizSession.current
+      session.start!
+      started_at = session.answering_started_at
+      allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+
+      travel_to(started_at + 25.seconds, with_usec: true) do
+        post "/api/operator/quiz/close", params: { immediate: false }, headers: operator_headers, as: :json
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["phase"]).to eq("closing")
+        before = session.reload.attributes
+        post "/api/operator/quiz/close", params: { immediate: true }, headers: operator_headers, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(session.reload.attributes).to eq(before)
+      end
+
+      travel_to(started_at + 30.seconds, with_usec: true) do
+        post "/api/operator/quiz/close", params: { immediate: true }, headers: operator_headers, as: :json
+        expect(response).to have_http_status(:ok)
+        expect(session.reload).to have_attributes(phase: "closed", phase_started_at: started_at + 30.seconds)
+      end
+    end
+
+    %w[waiting closed revealed finished].each do |phase|
+      it "rejects automatic expiry from #{phase}" do
+        authenticate_operator(manager_enabled: true)
+        create_question(position: 1, time_limit_seconds: 30)
+        session = QuizSession.current
+        session.start! unless phase == "waiting"
+        session.reveal! if phase == "revealed"
+        session.finish! if phase == "finished"
+        at = Time.current + 31.seconds
+
+        travel_to(at, with_usec: true) do
+          session.close_expired_answer_window! if phase == "closed"
+          before = session.reload.attributes
+          post "/api/operator/quiz/close", params: { immediate: true }, headers: operator_headers, as: :json
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(session.reload.attributes).to eq(before)
+        end
+      end
     end
   end
 

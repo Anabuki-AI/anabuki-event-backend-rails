@@ -36,7 +36,8 @@ RSpec.describe "Participant quiz answers", type: :request do
 
   let(:origin_headers) { { "Origin" => "https://event.example" } }
 
-  before do
+  before do |example|
+    question.update!(example.metadata[:question_attributes]) if example.metadata[:question_attributes]
     sign_in(participant)
     QuizSession.current.start!
   end
@@ -120,8 +121,7 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(response.parsed_body["error"]).to include("eliminated")
   end
 
-  it "uses the question's configured points and locked multiplier for a correct answer" do
-    question.update!(points: 250)
+  it "uses the question's configured points and locked multiplier for a correct answer", question_attributes: { points: 250 } do
     confirm_confidence("high")
 
     submit_answer(choice: "B")
@@ -152,8 +152,7 @@ RSpec.describe "Participant quiz answers", type: :request do
     )
   end
 
-  it "deducts half of the question points for an incorrect Lv.3 answer" do
-    question.update!(points: 101)
+  it "deducts half of the question points for an incorrect Lv.3 answer", question_attributes: { points: 101 } do
     confirm_confidence("high")
 
     submit_answer(choice: "A")
@@ -214,10 +213,11 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(ParticipantAnswer.sole).to have_attributes(choice: "B", confidence_level: "high", awarded_points: 200)
   end
 
-  it "does not replace the answer after the server closes the window" do
+  it "does not replace the answer after the server closes the window", question_attributes: { time_limit_seconds: 30 } do
     confirm_confidence("high")
     submit_answer(choice: "B")
     answer = ParticipantAnswer.sole
+    travel_to(QuizSession.current.answering_started_at + 30.seconds, with_usec: true)
     QuizSession.current.close!
 
     submit_answer(choice: "A")
@@ -238,8 +238,7 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(body["correct_answer"]).to be_nil
   end
 
-  it "rejects answers after the server-side time limit and closes the window" do
-    question.update!(time_limit_seconds: 1)
+  it "rejects answers after the server-side time limit and closes the window", question_attributes: { time_limit_seconds: 1 } do
     confirm_confidence("normal")
 
     travel_to(QuizSession.current.reload.phase_started_at + 2.seconds) do
@@ -252,8 +251,7 @@ RSpec.describe "Participant quiz answers", type: :request do
     end
   end
 
-  it "keeps the original question time limit while the closing countdown runs" do
-    question.update!(time_limit_seconds: 1)
+  it "keeps the original question time limit while the closing countdown runs", question_attributes: { time_limit_seconds: 1 } do
     confirm_confidence("normal")
     scheduled = instance_double(ActiveJob::ConfiguredJob, perform_later: true)
     allow(CloseQuizAnswersJob).to receive(:set).and_return(scheduled)
@@ -283,7 +281,25 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(QuizSession.current.reload.phase).to eq("closing")
   end
 
-  it "rejects confidence locks and answers outside the answering phase" do
+  it "rejects both confidence selection and answer correction exactly at the closing deadline without a worker" do
+    confirm_confidence("normal")
+    submit_answer(choice: "B")
+    answer = ParticipantAnswer.sole
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+    QuizSession.current.request_close!
+
+    travel_to(QuizSession.current.phase_started_at + 10.seconds, with_usec: true) do
+      submit_answer(choice: "A")
+      expect(response).to have_http_status(:conflict)
+      expect(answer.reload.choice).to eq("B")
+      confirm_confidence("normal")
+      expect(response).to have_http_status(:conflict)
+      expect(QuizSession.current.phase).to eq("closed")
+    end
+  end
+
+  it "rejects confidence locks and answers outside the answering phase", question_attributes: { time_limit_seconds: 30 } do
+    travel_to(QuizSession.current.answering_started_at + 30.seconds, with_usec: true)
     QuizSession.current.close!
 
     expect {

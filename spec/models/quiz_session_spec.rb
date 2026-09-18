@@ -20,6 +20,7 @@ RSpec.describe QuizSession do
   it "stamps phase_started_at on every transition and fixes the final elapsed seconds" do
     create_question(position: 1)
     second = create_question(position: 2)
+    second.update!(time_limit_seconds: 30)
     session = described_class.current
 
     travel_to Time.zone.parse("2026-09-20 10:00:00") do
@@ -28,6 +29,7 @@ RSpec.describe QuizSession do
     expect(session.reload.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:00:00"))
 
     travel_to Time.zone.parse("2026-09-20 10:00:30") do
+      session.reveal!
       session.publish_next!
     end
     expect(session.reload.phase_started_at).to eq(Time.zone.parse("2026-09-20 10:00:30"))
@@ -102,12 +104,49 @@ RSpec.describe QuizSession do
     closing_started_at = session.reload.phase_started_at
     session.reset!
     session.start!
-    session.close!
     session.reveal!
     session.publish_next!
 
     travel_to 1.minute.from_now do
       session.complete_requested_close!(question_id: first.id, closing_started_at:)
+    end
+
+    expect(session.reload).to have_attributes(current_question_id: second.id, phase: "answering")
+  end
+
+  it "does not let an expired snapshot close a newly published question" do
+    create_question(position: 1)
+    second = create_question(position: 2)
+    session = described_class.current
+    session.start!
+    allow(CloseQuizAnswersJob).to receive(:set).and_return(instance_double(ActiveJob::ConfiguredJob, perform_later: true))
+    session.request_close!
+    stale = described_class.current
+    deadline = stale.phase_started_at + 10.seconds
+
+    travel_to(deadline, with_usec: true) do
+      session.reveal!
+      session.publish_next!
+      stale.close_expired_answer_window!
+    end
+
+    expect(session.reload).to have_attributes(current_question_id: second.id, phase: "answering")
+  end
+
+  it "rechecks automatic expiry under lock instead of trusting an expired snapshot" do
+    first = create_question(position: 1)
+    first.update!(time_limit_seconds: 5)
+    second = create_question(position: 2)
+    second.update!(time_limit_seconds: 30)
+    session = described_class.current
+    session.start!
+    stale = described_class.current
+    deadline = session.answering_started_at + 5.seconds
+
+    travel_to(deadline, with_usec: true) do
+      session.reveal!
+      session.publish_next!
+      expect { stale.close! }.to raise_error(QuizSession::InvalidTransition, "Question time limit has not expired")
     end
 
     expect(session.reload).to have_attributes(current_question_id: second.id, phase: "answering")
