@@ -487,6 +487,34 @@ RSpec.describe "Admin question management", type: :request do
     expect(response.parsed_body).to include("correctAnswer" => "B")
   end
 
+  it "keeps correctAnswer editable for a relay question already revealed live, even after it is deselected" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post_question(question_payload.merge(isRelayQuestion: true))
+    first = response.parsed_body
+    expect(first).to include("revealedAt" => nil)
+    post_question(question_payload(question_text: "2問目").merge(isRelayQuestion: true))
+    second = response.parsed_body
+
+    put "/api/admin/questions/#{first.fetch('id')}", params: question_payload.merge(isRelayQuestion: true, isSelectedRelayQuestion: true), as: :json
+    expect(response).to have_http_status(:ok)
+
+    # Simulate the live progression having already revealed this question's
+    # answer (QuizSession#reveal! sets this outside the admin API).
+    Question.find(first.fetch("id")).update!(revealed_at: Time.current)
+
+    # Selecting the second relay question deselects the first one.
+    put "/api/admin/questions/#{second.fetch('id')}", params: question_payload(question_text: "2問目").merge(isRelayQuestion: true, isSelectedRelayQuestion: true), as: :json
+    expect(response).to have_http_status(:ok)
+    get "/api/admin/questions/#{first.fetch('id')}"
+    expect(response.parsed_body).to include("isSelectedRelayQuestion" => false)
+    expect(response.parsed_body.fetch("revealedAt")).to be_present
+
+    put "/api/admin/questions/#{first.fetch('id')}", params: question_payload(correct_answer: "B").merge(isRelayQuestion: true), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("correctAnswer" => "B")
+  end
+
   it "selects at most one relay question at a time, deselecting the previous selection" do
     authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
 
