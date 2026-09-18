@@ -63,4 +63,14 @@ export default {
 
     return getContainer(env.RAILS_CONTAINER, 'production').fetch(request)
   },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      getContainer(env.RAILS_CONTAINER, 'production')
+        .fetch('http://container/health')
+        .catch((error) => {
+          console.error('Container keep-warm ping failed', error)
+        }),
+    )
+  },
 }
