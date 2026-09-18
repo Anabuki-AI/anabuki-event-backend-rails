@@ -119,7 +119,6 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-      EC2_HOST: ${{ secrets.EC2_HOST }}
       EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
       EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -147,7 +146,7 @@ jobs:
       - name: Validate deployment inputs without printing secret values
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID EC2_HOST EC2_SSH_PRIVATE_KEY EC2_KNOWN_HOSTS DATABASE_URL SECRET_KEY_BASE ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET PUBLIC_BASE_URL ADMIN_FRONTEND_URL OPERATOR_FRONTEND_URL GOOGLE_OAUTH_CALLBACK_URL OPERATOR_GOOGLE_OAUTH_CALLBACK_URL R2_ENDPOINT R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID EC2_SSH_PRIVATE_KEY EC2_KNOWN_HOSTS DATABASE_URL SECRET_KEY_BASE ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET PUBLIC_BASE_URL ADMIN_FRONTEND_URL OPERATOR_FRONTEND_URL GOOGLE_OAUTH_CALLBACK_URL OPERATOR_GOOGLE_OAUTH_CALLBACK_URL R2_ENDPOINT R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
             if [ -z "${!name:-}" ]; then
               echo "::error::$name is not configured in the production environment"
               exit 1
@@ -164,6 +163,29 @@ jobs:
           eval "$(ssh-agent -s)"
           ssh-add "$RUNNER_TEMP/ec2-key"
           echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+
+      - name: Open SSH channel through Cloudflare Tunnel
+        # The EC2 public IP changes on stop/start, and SSH must not depend on
+        # it. All deploy traffic rides the outbound-only Cloudflare Tunnel
+        # (ssh.anabuki-event.com), so reboots and IP changes are transparent.
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/cloudflared" \
+            https://github.com/cloudflare/cloudflared/releases/download/2025.9.1/cloudflared-linux-amd64
+          chmod +x "$RUNNER_TEMP/cloudflared"
+          "$RUNNER_TEMP/cloudflared" access tcp \
+            --hostname ssh.anabuki-event.com \
+            --url 127.0.0.1:2222 > "$RUNNER_TEMP/cloudflared-access.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/2222) 2>/dev/null; then
+              echo "tunnel ssh channel ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Cloudflare Tunnel SSH channel did not open; see $RUNNER_TEMP/cloudflared-access.log"
+          exit 1
 
       - name: Preflight Cloudflare account, zone, and Tunnel read scope
         env:
@@ -219,7 +241,9 @@ jobs:
             rm -f "$tunnel_secret" "$payload"
           fi
           config_payload="$RUNNER_TEMP/tunnel-config.json"
-          jq -n '{config:{ingress:[{hostname:"api.anabuki-event.com",service:"http://api:3000"},{service:"http_status:404"}]}}' > "$config_payload"
+          # 172.17.0.1 is the host-side docker0 gateway: reachable from the
+          # cloudflared container, and unaffected by instance IP changes.
+          jq -n '{config:{ingress:[{hostname:"api.anabuki-event.com",service:"http://api:3000"},{hostname:"ssh.anabuki-event.com",service:"ssh://172.17.0.1:22"},{service:"http_status:404"}]}}' > "$config_payload"
           configured=$(curl --config "$cf_config" --request PUT --data-binary "@$config_payload" "$api/accounts/$CF_ACCOUNT_ID/cfd_tunnel/$tunnel_id/configurations")
           test "$(jq -r '.success' <<<"$configured")" = true
           zone=$(curl --config "$cf_config" "$api/zones?name=anabuki-event.com&status=active")
@@ -247,12 +271,11 @@ jobs:
       - name: Provision Docker and least-privilege EC2 deploy user
         run: |
           set -euo pipefail
-          host="$EC2_HOST"
           ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ec2-known-hosts")
-          ssh "${ssh_opts[@]}" ec2-user@"$host" 'sudo dnf install -y docker && sudo systemctl enable --now docker && sudo useradd --create-home --shell /bin/bash anabuki-deploy 2>/dev/null || true && sudo usermod --append --groups docker anabuki-deploy && sudo install -d -o anabuki-deploy -g anabuki-deploy -m 0750 /opt/anabuki-event /opt/anabuki-event/incoming /opt/anabuki-event/releases /opt/anabuki-event/shared /opt/anabuki-event/staging && sudo install -d -o anabuki-deploy -g anabuki-deploy -m 0700 /home/anabuki-deploy/.ssh'
+          ssh -p 2222 "${ssh_opts[@]}" ec2-user@127.0.0.1 'sudo dnf install -y docker && sudo systemctl enable --now docker && sudo useradd --create-home --shell /bin/bash anabuki-deploy 2>/dev/null || true && sudo usermod --append --groups docker anabuki-deploy && sudo install -d -o anabuki-deploy -g anabuki-deploy -m 0750 /opt/anabuki-event /opt/anabuki-event/incoming /opt/anabuki-event/releases /opt/anabuki-event/shared /opt/anabuki-event/staging && sudo install -d -o anabuki-deploy -g anabuki-deploy -m 0700 /home/anabuki-deploy/.ssh'
           ssh-keygen -y -f "$RUNNER_TEMP/ec2-key" > "$RUNNER_TEMP/ec2-public-key"
-          ssh "${ssh_opts[@]}" ec2-user@"$host" 'sudo tee /home/anabuki-deploy/.ssh/authorized_keys >/dev/null && sudo chown -R anabuki-deploy:anabuki-deploy /home/anabuki-deploy/.ssh && sudo chmod 600 /home/anabuki-deploy/.ssh/authorized_keys' < "$RUNNER_TEMP/ec2-public-key"
-          ssh "${ssh_opts[@]}" -o IdentitiesOnly=no anabuki-deploy@"$host" 'docker compose version >/dev/null && test -w /opt/anabuki-event'
+          ssh -p 2222 "${ssh_opts[@]}" ec2-user@127.0.0.1 'sudo tee /home/anabuki-deploy/.ssh/authorized_keys >/dev/null && sudo chown -R anabuki-deploy:anabuki-deploy /home/anabuki-deploy/.ssh && sudo chmod 600 /home/anabuki-deploy/.ssh/authorized_keys' < "$RUNNER_TEMP/ec2-public-key"
+          ssh -p 2222 "${ssh_opts[@]}" -o IdentitiesOnly=no anabuki-deploy@127.0.0.1 'docker compose version >/dev/null && test -w /opt/anabuki-event'
 
       - name: Write production runtime files to runner temp storage
         run: |
@@ -282,15 +305,15 @@ jobs:
           archive="$RUNNER_TEMP/release.tar.gz"
           tar --exclude=.git --exclude=tmp --exclude=log --exclude=storage --exclude=.env -czf "$archive" .
           ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ec2-known-hosts")
-          ssh "${ssh_opts[@]}" anabuki-deploy@"$EC2_HOST" "install -m 600 /dev/stdin /opt/anabuki-event/shared/.env.production" < "$RUNNER_TEMP/backend.env"
-          ssh "${ssh_opts[@]}" anabuki-deploy@"$EC2_HOST" "install -m 600 /dev/stdin /opt/anabuki-event/shared/.cloudflared.env" < "$RUNNER_TEMP/cloudflared.env"
-          scp "${ssh_opts[@]}" "$archive" anabuki-deploy@"$EC2_HOST:/opt/anabuki-event/incoming/${GITHUB_SHA}.tar.gz"
+          ssh -p 2222 "${ssh_opts[@]}" anabuki-deploy@127.0.0.1 "install -m 600 /dev/stdin /opt/anabuki-event/shared/.env.production" < "$RUNNER_TEMP/backend.env"
+          ssh -p 2222 "${ssh_opts[@]}" anabuki-deploy@127.0.0.1 "install -m 600 /dev/stdin /opt/anabuki-event/shared/.cloudflared.env" < "$RUNNER_TEMP/cloudflared.env"
+          scp -P 2222 "${ssh_opts[@]}" "$archive" anabuki-deploy@127.0.0.1:/opt/anabuki-event/incoming/${GITHUB_SHA}.tar.gz
 
       - name: Activate release without running migrations
         run: |
           set -euo pipefail
           ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ec2-known-hosts")
-          ssh "${ssh_opts[@]}" anabuki-deploy@"$EC2_HOST" "set -euo pipefail; staging=/opt/anabuki-event/staging/${GITHUB_SHA}; rm -rf \"\$staging\"; mkdir -p \"\$staging\"; tar --extract --gzip --file /opt/anabuki-event/incoming/${GITHUB_SHA}.tar.gz --directory \"\$staging\"; RELEASE_SHA=${GITHUB_SHA} ARCHIVE_PATH=/opt/anabuki-event/incoming/${GITHUB_SHA}.tar.gz APP_ROOT=/opt/anabuki-event bash \"\$staging/deploy/ec2/deploy.sh\""
+          ssh -p 2222 "${ssh_opts[@]}" anabuki-deploy@127.0.0.1 "set -euo pipefail; staging=/opt/anabuki-event/staging/${GITHUB_SHA}; rm -rf \"\$staging\"; mkdir -p \"\$staging\"; tar --extract --gzip --file /opt/anabuki-event/incoming/${GITHUB_SHA}.tar.gz --directory \"\$staging\"; RELEASE_SHA=${GITHUB_SHA} ARCHIVE_PATH=/opt/anabuki-event/incoming/${GITHUB_SHA}.tar.gz APP_ROOT=/opt/anabuki-event bash \"\$staging/deploy/ec2/deploy.sh\""
 
       - name: Verify public tunnel health
         run: |
@@ -302,7 +325,7 @@ jobs:
         run: |
           set -euo pipefail
           ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ec2-known-hosts")
-          listeners=$(ssh "${ssh_opts[@]}" anabuki-deploy@"$EC2_HOST" "ss -ltn 2>/dev/null || true")
+          listeners=$(ssh -p 2222 "${ssh_opts[@]}" anabuki-deploy@127.0.0.1 "ss -ltn 2>/dev/null || true")
           if grep -Eq '(^|:)3000[[:space:]]' <<<"$listeners"; then
             echo "::error::EC2 host port 3000 is listening; Rails must remain private to the Docker network"
             exit 1
