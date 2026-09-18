@@ -10,19 +10,28 @@ class ParticipantQuizController < ApplicationController
     render json: participant_quiz_state(quiz_session, current_participant)
   end
 
-  # Confidence is selected before the participant sees an Lv.1-reduced answer
-  # list. The returned state is immediately usable by the polling client.
+  # Selects or updates the confidence level for the current question. Lv.2/Lv.3
+  # stay switchable until an answer is recorded; Lv.1 is one-way and eliminates
+  # one server-chosen incorrect option (avoiding the participant's selected
+  # choice when one is provided). The returned state is immediately usable by
+  # the polling client.
   def confirm_confidence_level
     confidence_level = params[:confidence_level]
     unless ConfidenceMultiplier.all_levels.key?(confidence_level)
       return render_error("confidence_level is invalid", :unprocessable_content)
     end
 
+    choice = params[:choice]
+    if choice.present? && %w[A B C D].exclude?(choice)
+      return render_error("choice is invalid", :unprocessable_content)
+    end
+
     quiz_session = QuizSession.current
-    quiz_session.confirm_confidence_level!(
+    quiz_session.select_confidence_level!(
       participant: current_participant,
       question_id: params[:question_id],
-      confidence_level:
+      confidence_level:,
+      choice: choice.presence
     )
 
     render json: participant_quiz_state(quiz_session.reload, current_participant)
@@ -85,7 +94,8 @@ class ParticipantQuizController < ApplicationController
     state[:my_answer] = my_answer && my_answer_json(my_answer)
     state[:correct_answer] = quiz_session.phase == "revealed" ? question&.correct_answer : nil
     state[:confidence_level] = selection&.confidence_level || my_answer&.confidence_level
-    state[:confidence_locked] = selection.present? || my_answer.present?
+    # Only Lv.1 and a recorded answer freeze the level; Lv.2/Lv.3 stay switchable.
+    state[:confidence_locked] = selection&.confidence_level == "low" || my_answer.present?
     state[:confidence_multipliers] = ConfidenceMultiplier.all_levels.transform_values { |multiplier| multiplier.confidence_multiplier.to_f }
     state
   end
@@ -113,19 +123,20 @@ class ParticipantQuizController < ApplicationController
   end
 
   def question_json(question, selection: nil)
-    choices = {
-      "A" => question.choice_a,
-      "B" => question.choice_b,
-      "C" => question.choice_c,
-      "D" => question.choice_d
-    }
-    choices.delete(selection.eliminated_choice) if selection&.eliminated_choice
-
+    # All four choices stay visible; an Lv.1 elimination is reported through
+    # eliminated_choice so the client can gray the option out instead of
+    # removing it.
     {
       question_id: question.id,
       position: question.position,
       question_text: question.question_text,
-      choices:,
+      choices: {
+        "A" => question.choice_a,
+        "B" => question.choice_b,
+        "C" => question.choice_c,
+        "D" => question.choice_d
+      },
+      eliminated_choice: selection&.eliminated_choice,
       image_url: question_image_url(question)
     }
   end

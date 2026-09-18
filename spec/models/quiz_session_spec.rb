@@ -175,7 +175,7 @@ RSpec.describe QuizSession do
     )
     session = described_class.current
     session.start!
-    session.confirm_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
+    session.select_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
 
     session.reset!
 

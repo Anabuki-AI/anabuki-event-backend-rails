@@ -69,9 +69,12 @@ class QuizSession < ApplicationRecord
     Question.where("position > ?", current_question.position).order(:position).first
   end
 
-  # Locks one confidence level before an answer can be selected. Low confidence
-  # (Lv.1) receives one server-chosen incorrect option to eliminate.
-  def confirm_confidence_level!(participant:, question_id:, confidence_level:)
+  # Selects or updates the confidence level for the current question. Lv.2/Lv.3
+  # can be switched freely until an answer is recorded; Lv.1 is one-way and
+  # eliminates one server-chosen incorrect option. `choice` (the participant's
+  # currently selected option, optional) scopes that elimination so the
+  # selected option is never the one removed.
+  def select_confidence_level!(participant:, question_id:, confidence_level:, choice: nil)
     expired = false
     selection = transaction do
       lock!
@@ -83,22 +86,29 @@ class QuizSession < ApplicationRecord
         nil
       elsif !answer_window_matches?(question, question_id)
         raise InvalidTransition, "Answers are not being accepted for this question"
+      elsif ParticipantAnswer.exists?(participant:, question:)
+        raise InvalidTransition, "Confidence level cannot be changed after answering"
       else
         existing = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
-        if existing
-          if existing.confidence_level != confidence_level
-            raise InvalidTransition, "Confidence level has already been selected"
-          end
-
-          existing
-        else
+        if existing.nil?
           ParticipantQuizConfidenceSelection.create!(
             participant:,
             question:,
             confidence_level:,
-            eliminated_choice: eliminated_choice_for(question, confidence_level),
+            eliminated_choice: eliminated_choice_for(question, confidence_level, choice:),
             locked_at: Time.current
           )
+        elsif existing.confidence_level == confidence_level
+          # Idempotent retry (including Lv.1, whose elimination never redraws).
+          existing
+        elsif existing.confidence_level == "low"
+          raise InvalidTransition, "Confidence level has already been selected"
+        else
+          existing.update!(
+            confidence_level:,
+            eliminated_choice: eliminated_choice_for(question, confidence_level, choice:)
+          )
+          existing
         end
       end
     end
@@ -276,10 +286,12 @@ class QuizSession < ApplicationRecord
     status == "in_progress" && phase.in?(%w[answering closing]) && question && question.id == question_id.to_i
   end
 
-  def eliminated_choice_for(question, confidence_level)
+  def eliminated_choice_for(question, confidence_level, choice: nil)
     return nil unless confidence_level == "low"
 
-    (%w[A B C D] - [ question.correct_answer ]).sample
+    candidates = %w[A B C D] - [ question.correct_answer ]
+    candidates -= [ choice ] if choice.present?
+    candidates.sample
   end
 
   def require_status!(expected, message)

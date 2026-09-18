@@ -46,7 +46,7 @@ RSpec.describe "question management and quiz progression locking", type: :model 
             sleep 0.01
           end
         end
-        @session.confirm_confidence_level!(participant: @participant, question_id: @question.id, confidence_level: "low")
+        @session.select_confidence_level!(participant: @participant, question_id: @question.id, confidence_level: "low")
       end
 
       expected_error = operation == :update ? ActiveRecord::RecordInvalid : ActiveRecord::RecordNotDestroyed
