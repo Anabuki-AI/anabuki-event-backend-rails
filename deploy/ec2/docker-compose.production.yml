@@ -1,0 +1,74 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: production
+    image: anabuki-event-backend:${RELEASE_SHA:-local}
+    env_file:
+      - ./.env.production
+    environment:
+      RAILS_ENV: production
+      PORT: 3000
+    expose:
+      - "3000"
+    command: ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-p", "3000"]
+    volumes:
+      - rails-storage-data:/app/storage
+    healthcheck:
+      test:
+        - CMD
+        - ruby
+        - -r
+        - net/http
+        - -e
+        - "uri = URI('http://127.0.0.1:3000/health'); exit(Net::HTTP.get_response(uri).is_a?(Net::HTTPSuccess) ? 0 : 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    image: anabuki-event-backend:${RELEASE_SHA:-local}
+    env_file:
+      - ./.env.production
+    environment:
+      RAILS_ENV: production
+    volumes:
+      - rails-storage-data:/app/storage
+    command:
+      - bundle
+      - exec
+      - que
+      - --worker-count
+      - ${QUE_WORKER_COUNT:-3}
+      - --queue-name
+      - default
+      - --queue-name
+      - mailers
+      - --queue-name
+      - action_mailbox_incineration
+      - --queue-name
+      - action_mailbox_routing
+      - --queue-name
+      - active_storage_analysis
+      - --queue-name
+      - active_storage_purge
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2025.9.1
+    env_file:
+      - ./.cloudflared.env
+    command: ["tunnel", "--no-autoupdate", "run"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  rails-storage-data:
