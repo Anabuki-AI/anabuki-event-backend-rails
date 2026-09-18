@@ -52,9 +52,9 @@ RSpec.describe "Participant quiz answers", type: :request do
     cookies["participant_session"] = raw_token
   end
 
-  def confirm_confidence(level, question_id: question.id)
+  def confirm_confidence(level, question_id: question.id, choice: nil)
     post "/api/participant/quiz/confidence-level",
-      params: { question_id:, confidence_level: level },
+      params: { question_id:, confidence_level: level, choice: }.compact,
       headers: origin_headers,
       as: :json
   end
@@ -75,38 +75,72 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(response.parsed_body["error"]).to include("confidence")
   end
 
-  it "locks a confidence level once, and accepts an identical retry" do
+  it "keeps the selected confidence level switchable between Lv.2 and Lv.3 until an answer is recorded" do
     confirm_confidence("normal")
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
       "confidence_level" => "normal",
-      "confidence_locked" => true
-    )
-    expect(ParticipantQuizConfidenceSelection.sole).to have_attributes(
-      participant:,
-      question:,
-      confidence_level: "normal",
-      eliminated_choice: nil
+      "confidence_locked" => false
     )
 
+    # Same-level retries stay idempotent, and Lv.2⇄Lv.3 switches are free.
     expect {
       confirm_confidence("normal")
+      confirm_confidence("high")
     }.not_to change(ParticipantQuizConfidenceSelection, :count)
     expect(response).to have_http_status(:ok)
-
-    confirm_confidence("high")
-    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to include(
+      "confidence_level" => "high",
+      "confidence_locked" => false
+    )
+    expect(ParticipantQuizConfidenceSelection.sole).to have_attributes(confidence_level: "high", eliminated_choice: nil)
   end
 
-  it "removes one incorrect choice only for the participant who locks Lv.1" do
+  it "freezes the confidence level once an answer is recorded" do
+    confirm_confidence("normal")
+    submit_answer(choice: "B")
+
+    confirm_confidence("high")
+
+    expect(response).to have_http_status(:conflict)
+    expect(ParticipantQuizConfidenceSelection.sole.confidence_level).to eq("normal")
+  end
+
+  it "eliminates one incorrect choice for Lv.1 and reports it without removing the option" do
     confirm_confidence("low")
 
     expect(response).to have_http_status(:ok)
     selection = ParticipantQuizConfidenceSelection.sole
     expect(selection.eliminated_choice).to be_in(%w[A C D])
-    expect(response.parsed_body.dig("question", "choices").keys).to contain_exactly(*(%w[A B C D] - [ selection.eliminated_choice ]))
-    expect(response.parsed_body.dig("question", "choices")).to include("B" => "choice B")
+    expect(response.parsed_body.dig("question", "choices").keys).to contain_exactly(*%w[A B C D])
+    expect(response.parsed_body.dig("question", "eliminated_choice")).to eq(selection.eliminated_choice)
+    expect(response.parsed_body["confidence_locked"]).to be(true)
+  end
+
+  it "never eliminates the choice the participant is currently selecting" do
+    confirm_confidence("low", choice: "A")
+
+    selection = ParticipantQuizConfidenceSelection.sole
+    expect(selection.eliminated_choice).to be_in(%w[C D])
+
+    confirm_confidence("low", choice: "C")
+
+    expect(ParticipantQuizConfidenceSelection.count).to eq(1)
+    expect(ParticipantQuizConfidenceSelection.sole.eliminated_choice).to eq(selection.eliminated_choice)
+  end
+
+  it "rejects switching away from Lv.1 but keeps the recorded elimination" do
+    confirm_confidence("low")
+    eliminated_choice = ParticipantQuizConfidenceSelection.sole.eliminated_choice
+
+    confirm_confidence("high")
+
+    expect(response).to have_http_status(:conflict)
+    expect(ParticipantQuizConfidenceSelection.sole).to have_attributes(
+      confidence_level: "low",
+      eliminated_choice: eliminated_choice
+    )
   end
 
   it "rejects an Lv.1-eliminated choice without recording an answer" do
@@ -129,10 +163,20 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(ParticipantAnswer.sole.awarded_points).to eq(500)
   end
 
-  it "records a correct answer using the locked level's configured multiplier" do
+  it "records an answer with the level selected at submit time after switching levels" do
+    confirm_confidence("high")
+    confirm_confidence("normal")
+
+    submit_answer(choice: "B")
+
+    expect(response).to have_http_status(:created)
+    expect(ParticipantAnswer.sole).to have_attributes(choice: "B", confidence_level: "normal", awarded_points: 100)
+  end
+
+  it "records a correct answer using the selected level's configured multiplier" do
     ConfidenceMultiplier.all_levels
     ConfidenceMultiplier.find_by!(level: "low").update!(confidence_multiplier: BigDecimal("0.75"))
-    confirm_confidence("low")
+    confirm_confidence("low", choice: "A")
 
     expect {
       submit_answer(choice: "B")

@@ -157,7 +157,7 @@ RSpec.describe "Admin question management", type: :request do
     participant = Participant.create!(display_name: "Player", gender: "no_answer", age_group: "20s", student_type: "not_student", agreed_terms: true)
     session = QuizSession.current
     session.start!
-    selection = session.confirm_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
+    selection = session.select_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
     session.finish!
 
     delete "/api/admin/questions/#{question.id}"
@@ -173,7 +173,7 @@ RSpec.describe "Admin question management", type: :request do
     participant = Participant.create!(display_name: "Player", gender: "no_answer", age_group: "20s", student_type: "not_student", agreed_terms: true)
     session = QuizSession.current
     session.start!
-    selection = session.confirm_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
+    selection = session.select_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
     answer = session.record_answer!(participant:, question_id: question.id, choice: "A")
 
     put "/api/admin/questions/#{question.id}", params: question_payload(correct_answer: selection.eliminated_choice, choice_a: "Changed"), as: :json
@@ -187,7 +187,7 @@ RSpec.describe "Admin question management", type: :request do
     cookies["participant_session"] = token
     get "/api/participant/quiz/state"
     expect(response.parsed_body.dig("question", "choices")).to include("A" => "選択肢A")
-    expect(response.parsed_body.dig("question", "choices")).not_to have_key(selection.eliminated_choice)
+    expect(response.parsed_body.dig("question", "eliminated_choice")).to eq(selection.eliminated_choice)
     expect(response.parsed_body.dig("my_answer", "choice")).to eq("A")
     expect(selection.reload.eliminated_choice).not_to eq(question.correct_answer)
   end

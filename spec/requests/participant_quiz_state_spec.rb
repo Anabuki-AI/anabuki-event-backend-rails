@@ -73,6 +73,7 @@ RSpec.describe "Participant quiz state", type: :request do
         "position" => 1,
         "question_text" => "Question 1",
         "choices" => { "A" => "choice A", "B" => "choice B", "C" => "choice C", "D" => "choice D" },
+        "eliminated_choice" => nil,
         "image_url" => nil
       },
       "answered" => false,
