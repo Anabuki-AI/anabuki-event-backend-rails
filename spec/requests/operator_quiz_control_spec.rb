@@ -91,6 +91,10 @@ RSpec.describe "Operator quiz control", type: :request do
         "question_text" => "Question 1",
         "choices" => { "A" => "choice A", "B" => "choice B", "C" => "choice C", "D" => "choice D" },
         "image_url" => nil,
+        "is_relay_question" => false,
+        "is_selected_relay_question" => false,
+        "revealed_at" => nil,
+        "live_correct_answer_confirmed" => false,
         "correct_answer" => "B",
         "time_limit_seconds" => 30,
         "answered_count" => 0,
@@ -155,6 +159,66 @@ RSpec.describe "Operator quiz control", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["next_question"]).to be_nil
+    end
+  end
+
+  describe "POST /api/operator/quiz/correct-answer" do
+    it "updates the current selected relay question before the answer is revealed" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1, correct_answer: "A", is_relay_question: true, is_selected_relay_question: true)
+      QuizSession.current.start!
+
+      post "/api/operator/quiz/correct-answer", params: { correct_answer: "C" }, headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body.dig("current", "correct_answer")).to eq("C")
+      expect(body.dig("current", "live_correct_answer_confirmed")).to be(true)
+      question.reload
+      expect(question.correct_answer).to eq("C")
+      expect(question.live_correct_answer_confirmed_at).to be_present
+    end
+
+    it "rejects non-relay questions and answer changes after reveal" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1)
+      session = QuizSession.current
+      session.start!
+
+      post "/api/operator/quiz/correct-answer", params: { correct_answer: "B" }, headers: operator_headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(question.reload.correct_answer).to eq("A")
+
+      session.reset!
+      question.update!(is_relay_question: true, is_selected_relay_question: true)
+      session.start!
+      session.reveal!
+      post "/api/operator/quiz/correct-answer", params: { correct_answer: "C" }, headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(question.reload.correct_answer).to eq("A")
+    end
+
+    it "rejects a relay question that has not been selected via the management screen" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1, is_relay_question: true)
+      QuizSession.current.start!
+
+      post "/api/operator/quiz/correct-answer", params: { correct_answer: "B" }, headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(question.reload.correct_answer).to eq("A")
+    end
+
+    it "rejects invalid choices without changing the current answer" do
+      authenticate_operator(manager_enabled: true)
+      question = create_question(position: 1, is_relay_question: true, is_selected_relay_question: true)
+      QuizSession.current.start!
+
+      post "/api/operator/quiz/correct-answer", params: { correct_answer: "E" }, headers: operator_headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(question.reload.correct_answer).to eq("A")
     end
   end
 
@@ -615,7 +679,8 @@ RSpec.describe "Operator quiz control", type: :request do
 
   private
 
-  def create_question(position:, correct_answer: "A", time_limit_seconds: nil)
+  def create_question(position:, correct_answer: "A", time_limit_seconds: nil, is_relay_question: false,
+    is_selected_relay_question: false)
     Question.create!(
       position:,
       question_text: "Question #{position}",
@@ -624,7 +689,9 @@ RSpec.describe "Operator quiz control", type: :request do
       choice_c: "choice C",
       choice_d: "choice D",
       correct_answer:,
-      time_limit_seconds:
+      time_limit_seconds:,
+      is_relay_question:,
+      is_selected_relay_question:
     )
   end
 

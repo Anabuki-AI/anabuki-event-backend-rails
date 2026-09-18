@@ -63,6 +63,28 @@ class QuizSession < ApplicationRecord
     end
   end
 
+  # Relay questions do not have to know their final answer before they are
+  # shown live. The operator may set it while answers are still being accepted
+  # (or after the window closes, before reveal), but never after the answer has
+  # been shown to participants.
+  def update_live_correct_answer!(correct_answer)
+    transaction do
+      lock!
+      require_status!("in_progress", "Quiz is not in progress")
+      unless phase.in?(%w[answering closing closed])
+        raise InvalidTransition, "Correct answer can only be changed before reveal"
+      end
+
+      question = current_question
+      unless question&.is_relay_question? && question.is_selected_relay_question?
+        raise InvalidTransition, "Only the selected, live relay question can have its correct answer changed"
+      end
+      raise InvalidTransition, "Correct answer must be A, B, C, or D" unless correct_answer.is_a?(String) && correct_answer.in?(%w[A B C D])
+
+      question.update_live_correct_answer!(correct_answer)
+    end
+  end
+
   def next_question
     return nil unless current_question
 
@@ -238,7 +260,7 @@ class QuizSession < ApplicationRecord
       lock!
       ParticipantAnswer.delete_all
       ParticipantQuizConfidenceSelection.delete_all
-      Question.update_all(revealed_at: nil)
+      Question.update_all(revealed_at: nil, live_correct_answer_confirmed_at: nil)
       update!(
         status: "waiting",
         current_question: nil,

@@ -18,6 +18,8 @@ class Question < ApplicationRecord
 
   has_one_attached :image
 
+  attr_accessor :allow_live_correct_answer_change
+
   validates :question_text, presence: true, length: { maximum: MAX_QUESTION_TEXT_LENGTH }
   validates :choice_a, :choice_b, :choice_c, :choice_d, presence: true, length: { maximum: MAX_CHOICE_LENGTH }
   validates :correct_answer, inclusion: { in: %w[A B C D] }
@@ -70,7 +72,9 @@ class Question < ApplicationRecord
     session = QuizSession.current
     session.with_lock do
       if session.status == "in_progress" && session.current_question_id == id
-        (changes_to_save.keys & LIVE_FIELDS).each do |field|
+        live_fields = changes_to_save.keys & LIVE_FIELDS
+        live_fields -= [ "correct_answer" ] if allow_live_correct_answer_change
+        live_fields.each do |field|
           errors.add(field, "cannot be changed while this question is live")
         end
         errors.add(:image, "cannot be changed while this question is live") if attachment_changes.key?("image")
@@ -94,12 +98,22 @@ class Question < ApplicationRecord
 
   def correct_answer_locked_for_unselected_relay_question
     return unless will_save_change_to_correct_answer?
+    return if allow_live_correct_answer_change
     return unless is_relay_question?
     return if is_selected_relay_question?
     return if revealed_at.present?
 
     errors.add(:correct_answer, "cannot be changed for a relay question that is not selected")
   end
+
+  def update_live_correct_answer!(correct_answer)
+    self.allow_live_correct_answer_change = true
+    update!(correct_answer:, live_correct_answer_confirmed_at: Time.current)
+  ensure
+    self.allow_live_correct_answer_change = false
+  end
+
+  public :update_live_correct_answer!
 
   # Non-relay questions never carry a selection; keep that invariant even if
   # a caller flips is_relay_question and is_selected_relay_question in the
