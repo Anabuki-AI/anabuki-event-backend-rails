@@ -228,6 +228,18 @@ RSpec.describe Question do
       expect(question.reload.correct_answer).to eq("C")
     end
 
+    it "resets the old answer when converting a non-relay question to a relay question" do
+      question = described_class.create!(valid_attributes.merge(correct_answer: "C"))
+
+      question.update!(is_relay_question: true)
+
+      expect(question.reload).to have_attributes(
+        is_relay_question: true,
+        is_selected_relay_question: false,
+        correct_answer: described_class::RELAY_QUESTION_DEFAULT_CORRECT_ANSWER
+      )
+    end
+
     it "allows selecting and changing correct_answer in the same update" do
       question = described_class.create!(valid_attributes.merge(is_relay_question: true))
 

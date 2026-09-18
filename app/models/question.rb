@@ -13,6 +13,7 @@ class Question < ApplicationRecord
   MIN_POINTS = 1
   MAX_POINTS = 1000
   MAX_TIME_LIMIT_SECONDS = 2_147_483_647
+  RELAY_QUESTION_DEFAULT_CORRECT_ANSWER = "A"
   LIVE_FIELDS = %w[question_text choice_a choice_b choice_c choice_d correct_answer
     points time_limit_seconds image_url position is_relay_question].freeze
 
@@ -44,6 +45,7 @@ class Question < ApplicationRecord
   validate :correct_answer_locked_for_unselected_relay_question, on: :update
 
   before_validation :normalize_text_attributes
+  before_validation :reset_correct_answer_when_converted_to_relay
   around_update :protect_live_question
   around_destroy :protect_used_question, prepend: true
   before_save :normalize_relay_selection
@@ -99,6 +101,7 @@ class Question < ApplicationRecord
   def correct_answer_locked_for_unselected_relay_question
     return unless will_save_change_to_correct_answer?
     return if allow_live_correct_answer_change
+    return if converted_to_relay_question?
     return unless is_relay_question?
     return if is_selected_relay_question?
     return if revealed_at.present?
@@ -120,6 +123,22 @@ class Question < ApplicationRecord
   # same request.
   def normalize_relay_selection
     self.is_selected_relay_question = false unless is_relay_question?
+  end
+
+  # A relay question's answer is decided during the live quiz. When an
+  # existing question is changed into a relay question, discard the ordinary
+  # question's answer instead of carrying it into the new relay round. The
+  # database keeps A as the required placeholder; the live operator still
+  # confirms the actual answer before it is revealed.
+  def reset_correct_answer_when_converted_to_relay
+    return unless converted_to_relay_question?
+
+    self.correct_answer = RELAY_QUESTION_DEFAULT_CORRECT_ANSWER
+    self.live_correct_answer_confirmed_at = nil
+  end
+
+  def converted_to_relay_question?
+    persisted? && will_save_change_to_is_relay_question? && is_relay_question? && attribute_in_database(:is_relay_question) == false
   end
 
   # At most one question may be selected at a time (enforced by a partial

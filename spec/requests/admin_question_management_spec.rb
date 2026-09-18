@@ -581,6 +581,25 @@ RSpec.describe "Admin question management", type: :request do
     expect(response.parsed_body).to include("correctAnswer" => "B")
   end
 
+  it "does not carry a non-relay answer into a relay question when editing" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post_question(question_payload(correct_answer: "C"))
+    question = response.parsed_body
+
+    put "/api/admin/questions/#{question.fetch('id')}",
+      params: question_payload(correct_answer: "C").merge(isRelayQuestion: true),
+      as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      "isRelayQuestion" => true,
+      "isSelectedRelayQuestion" => false,
+      "correctAnswer" => Question::RELAY_QUESTION_DEFAULT_CORRECT_ANSWER
+    )
+    expect(Question.find(question.fetch("id")).correct_answer).to eq(Question::RELAY_QUESTION_DEFAULT_CORRECT_ANSWER)
+  end
+
   private
 
   def post_question(payload)
