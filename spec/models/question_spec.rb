@@ -223,5 +223,31 @@ RSpec.describe Question do
       relay.update!(is_relay_question: false)
       expect(relay.reload).to have_attributes(is_relay_question: false, is_selected_relay_question: false)
     end
+
+    it "allows changing correct_answer on update for a relay question that has already been revealed, even once unselected" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+      question.update!(is_selected_relay_question: true, revealed_at: Time.current)
+
+      # Selecting a different relay question deselects this one (see
+      # "selects only one relay question at a time" above), which would
+      # re-lock a never-asked question but must not re-lock one whose round
+      # is already over.
+      other = described_class.create!(valid_attributes.merge(position: 2, question_text: "2問目", is_relay_question: true))
+      other.update!(is_selected_relay_question: true)
+      expect(question.reload.is_selected_relay_question).to be(false)
+
+      question.update!(correct_answer: "B")
+      expect(question.reload.correct_answer).to eq("B")
+    end
+
+    it "still rejects changing correct_answer for a relay question that is unselected and has never been revealed" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+      question.update!(is_selected_relay_question: true)
+      question.update!(is_selected_relay_question: false)
+
+      question.correct_answer = "B"
+      expect(question).not_to be_valid
+      expect(question.errors.where(:correct_answer)).to be_present
+    end
   end
 end

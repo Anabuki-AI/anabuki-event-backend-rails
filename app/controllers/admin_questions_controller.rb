@@ -227,6 +227,11 @@ class AdminQuestionsController < ApplicationController
       targetAudience: question.target_audience,
       isRelayQuestion: question.is_relay_question,
       isSelectedRelayQuestion: question.is_selected_relay_question,
+      # Set once by QuizSession#reveal! when this question's answer was shown
+      # live; never cleared except by a full QuizSession#reset!. Lets the
+      # admin UI tell "already asked" relay questions apart from ones that
+      # are merely unselected and have never been asked yet.
+      revealedAt: question.revealed_at&.iso8601,
       points: question.points,
       timeLimitSeconds: question.time_limit_seconds,
       createdAt: question.created_at.iso8601,

@@ -32,10 +32,13 @@ class Question < ApplicationRecord
   validate :image_url_is_http_url
   validate :image_is_valid_upload
   # Only a relay question can be "the one selected to ask this time"; a relay
-  # question that is not currently selected keeps whatever correct_answer it
-  # already has (correct_answer stays NOT NULL) but may not have it changed
-  # via an update while unselected. This is enforced here so the guard also
-  # applies to direct API calls, not just the admin UI.
+  # question that is not currently selected and has never been revealed live
+  # keeps whatever correct_answer it already has (correct_answer stays NOT
+  # NULL) but may not have it changed via an update. Once a question has been
+  # revealed (revealed_at set by QuizSession#reveal!), its round is over, so
+  # a later operator selecting a different relay question to ask next must
+  # not re-lock this one. This is enforced here so the guard also applies to
+  # direct API calls, not just the admin UI.
   validate :correct_answer_locked_for_unselected_relay_question, on: :update
 
   before_validation :normalize_text_attributes
@@ -93,6 +96,7 @@ class Question < ApplicationRecord
     return unless will_save_change_to_correct_answer?
     return unless is_relay_question?
     return if is_selected_relay_question?
+    return if revealed_at.present?
 
     errors.add(:correct_answer, "cannot be changed for a relay question that is not selected")
   end
