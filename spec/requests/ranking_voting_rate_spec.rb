@@ -54,6 +54,7 @@ RSpec.describe "Rankings and voting rate", type: :request do
 
       session.publish_next!
     end
+    session.finish!
   end
 
   def create_participant_session(participant)
@@ -123,11 +124,11 @@ RSpec.describe "Rankings and voting rate", type: :request do
       expect(response).to have_http_status(:ok)
       body = response.parsed_body
       expect(body["rankings"]).to eq([
-        { "rank" => 1, "participant_id" => carol.id, "display_name" => "Carol" },
-        { "rank" => 2, "participant_id" => alice.id, "display_name" => "Alice" },
-        { "rank" => 3, "participant_id" => bob.id, "display_name" => "Bob" }
+        { "rank" => 1, "participant_id" => carol.id, "display_name" => "Carol", "total_points" => 250 },
+        { "rank" => 2, "participant_id" => alice.id, "display_name" => "Alice", "total_points" => 200 },
+        { "rank" => 3, "participant_id" => bob.id, "display_name" => "Bob", "total_points" => 0 }
       ])
-      expect(body["me"]).to eq({ "rank" => 2, "participant_id" => alice.id, "display_name" => "Alice" })
+      expect(body["me"]).to eq({ "rank" => 2, "participant_id" => alice.id, "display_name" => "Alice", "total_points" => 200 })
     end
 
     it "ranks negative scores below zero-point participants" do
@@ -142,8 +143,8 @@ RSpec.describe "Rankings and voting rate", type: :request do
       get "/api/rankings"
 
       expect(response.parsed_body["rankings"]).to eq([
-        { "rank" => 1, "participant_id" => zero.id, "display_name" => "Zero" },
-        { "rank" => 2, "participant_id" => negative.id, "display_name" => "Negative" }
+        { "rank" => 1, "participant_id" => zero.id, "display_name" => "Zero", "total_points" => 0 },
+        { "rank" => 2, "participant_id" => negative.id, "display_name" => "Negative", "total_points" => -50 }
       ])
       expect(response.parsed_body["me"]).to include("rank" => 2)
     end
@@ -180,22 +181,66 @@ RSpec.describe "Rankings and voting rate", type: :request do
       rankings = response.parsed_body["rankings"]
       expect(rankings.size).to eq(20)
       expect(rankings.last["display_name"]).to eq("Player 19")
+      expect(rankings.first["total_points"]).to eq(100)
       expect(response.parsed_body["me"]).to include("display_name" => "Me", "rank" => 26)
+      expect(response.parsed_body["me"]["total_points"]).to eq(10)
+    end
+
+    it "hides the current question from points and ranks until the next question is published" do
+      alice = create_participant("Alice")
+      bob = create_participant("Bob")
+
+      answer(alice, question1, choice: "B", points: 200)
+      answer(bob, question1, choice: "A", points: 0)
+      answer(alice, question2, choice: "B", points: 500)
+
+      session = QuizSession.current
+      session.start!
+      session.reveal!
+
+      sign_in(alice)
+      get "/api/rankings"
+
+      expect(response.parsed_body).to eq("rankings" => [], "me" => nil)
+
+      session.publish_next!
+      get "/api/rankings"
+
+      expect(response.parsed_body["rankings"]).to eq([
+        { "rank" => 1, "participant_id" => alice.id, "display_name" => "Alice", "total_points" => 200 },
+        { "rank" => 2, "participant_id" => bob.id, "display_name" => "Bob", "total_points" => 0 }
+      ])
+      expect(response.parsed_body["me"]).to eq(
+        "rank" => 1, "participant_id" => alice.id, "display_name" => "Alice", "total_points" => 200
+      )
+
+      session.reveal!
+      get "/api/rankings"
+
+      expect(response.parsed_body["me"]["total_points"]).to eq(200)
+      expect(response.parsed_body["me"]["rank"]).to eq(1)
+
+      session.finish!
+      get "/api/rankings"
+
+      expect(response.parsed_body["me"]["total_points"]).to eq(700)
     end
 
     it "excludes answers for questions whose correct answer is not revealed" do
       alice = create_participant("Alice")
       answer(alice, question1, choice: "B", points: 200)
       answer(alice, question2, choice: "B", points: 500)
-      QuizSession.current.start!
-      QuizSession.current.reveal!
+      session = QuizSession.current
+      session.start!
+      session.reveal!
+      session.publish_next!
 
       sign_in(alice)
       get "/api/rankings"
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["rankings"]).to eq([
-        { "rank" => 1, "participant_id" => alice.id, "display_name" => "Alice" }
+        { "rank" => 1, "participant_id" => alice.id, "display_name" => "Alice", "total_points" => 200 }
       ])
       expect(question1.reload.revealed_at).to be_present
       expect(question2.reload.revealed_at).to be_nil

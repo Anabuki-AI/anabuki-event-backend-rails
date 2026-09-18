@@ -35,9 +35,16 @@ class RankingsController < ApplicationController
   # Competition ranking: equal scores share the same rank and the next rank
   # skips (1, 2, 2, 4...). Participants without answers are unranked.
   def ranked_entries
-    rows = ParticipantAnswer
+    quiz_session = QuizSession.current
+    answers = ParticipantAnswer
       .joins(:participant, :question)
       .where.not(questions: { revealed_at: nil })
+
+    if quiz_session.status == "in_progress" && quiz_session.current_question_id.present?
+      answers = answers.where.not(participant_answers: { question_id: quiz_session.current_question_id })
+    end
+
+    rows = answers
       .group("participants.id", "participants.display_name")
       .order(Arel.sql("SUM(participant_answers.awarded_points) DESC"), "participants.id")
       .pluck("participants.id", "participants.display_name", "SUM(participant_answers.awarded_points) AS total_points")
@@ -52,7 +59,8 @@ class RankingsController < ApplicationController
       {
         rank:,
         participant_id:,
-        display_name:
+        display_name:,
+        total_points:
       }
     end
   end
