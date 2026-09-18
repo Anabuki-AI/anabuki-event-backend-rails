@@ -464,6 +464,58 @@ RSpec.describe "Admin question management", type: :request do
     expect(response.parsed_body.fetch("error")).to eq("level must be high, normal, or low")
   end
 
+  it "locks correctAnswer for an unselected relay question and unlocks it once selected" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post_question(question_payload.merge(isRelayQuestion: true))
+    expect(response).to have_http_status(:created)
+    relay = response.parsed_body
+    expect(relay).to include("isRelayQuestion" => true, "isSelectedRelayQuestion" => false, "correctAnswer" => "A")
+
+    put "/api/admin/questions/#{relay.fetch('id')}", params: question_payload(correct_answer: "B").merge(isRelayQuestion: true), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("correctAnswer")
+    get "/api/admin/questions/#{relay.fetch('id')}"
+    expect(response.parsed_body.fetch("correctAnswer")).to eq("A")
+
+    put "/api/admin/questions/#{relay.fetch('id')}", params: question_payload.merge(isRelayQuestion: true, isSelectedRelayQuestion: true), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("isSelectedRelayQuestion" => true)
+
+    put "/api/admin/questions/#{relay.fetch('id')}", params: question_payload(correct_answer: "B").merge(isRelayQuestion: true, isSelectedRelayQuestion: true), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("correctAnswer" => "B")
+  end
+
+  it "selects at most one relay question at a time, deselecting the previous selection" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post_question(question_payload.merge(isRelayQuestion: true))
+    first = response.parsed_body
+    post_question(question_payload(question_text: "2問目").merge(isRelayQuestion: true))
+    second = response.parsed_body
+
+    put "/api/admin/questions/#{first.fetch('id')}", params: question_payload.merge(isRelayQuestion: true, isSelectedRelayQuestion: true), as: :json
+    expect(response.parsed_body).to include("isSelectedRelayQuestion" => true)
+
+    put "/api/admin/questions/#{second.fetch('id')}", params: question_payload(question_text: "2問目").merge(isRelayQuestion: true, isSelectedRelayQuestion: true), as: :json
+    expect(response.parsed_body).to include("isSelectedRelayQuestion" => true)
+
+    get "/api/admin/questions/#{first.fetch('id')}"
+    expect(response.parsed_body).to include("isSelectedRelayQuestion" => false)
+  end
+
+  it "does not restrict correctAnswer changes for a non-relay question" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post_question(question_payload)
+    question = response.parsed_body
+
+    put "/api/admin/questions/#{question.fetch('id')}", params: question_payload(correct_answer: "B"), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("correctAnswer" => "B")
+  end
+
   private
 
   def post_question(payload)

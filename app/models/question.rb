@@ -9,6 +9,7 @@ class Question < ApplicationRecord
   ALLOWED_IMAGE_CONTENT_TYPES = %w[image/webp].freeze
   MAX_IMAGE_BYTE_SIZE = 5.megabytes
   POSITION_LOCK_KEY = 6_813_271_904
+  RELAY_SELECTION_LOCK_KEY = 6_813_271_905
   MIN_POINTS = 1
   MAX_POINTS = 1000
   MAX_TIME_LIMIT_SECONDS = 2_147_483_647
@@ -30,10 +31,18 @@ class Question < ApplicationRecord
     numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: MAX_TIME_LIMIT_SECONDS }, allow_nil: true
   validate :image_url_is_http_url
   validate :image_is_valid_upload
+  # Only a relay question can be "the one selected to ask this time"; a relay
+  # question that is not currently selected keeps whatever correct_answer it
+  # already has (correct_answer stays NOT NULL) but may not have it changed
+  # via an update while unselected. This is enforced here so the guard also
+  # applies to direct API calls, not just the admin UI.
+  validate :correct_answer_locked_for_unselected_relay_question, on: :update
 
   before_validation :normalize_text_attributes
   around_update :protect_live_question
   around_destroy :protect_used_question, prepend: true
+  before_save :normalize_relay_selection
+  before_save :unselect_other_relay_questions, if: :will_save_change_to_is_selected_relay_question?
   after_update :recalculate_participant_answer_scores, if: :scoring_fields_changed?
 
   class << self
@@ -78,6 +87,34 @@ class Question < ApplicationRecord
       end
       yield
     end
+  end
+
+  def correct_answer_locked_for_unselected_relay_question
+    return unless will_save_change_to_correct_answer?
+    return unless is_relay_question?
+    return if is_selected_relay_question?
+
+    errors.add(:correct_answer, "cannot be changed for a relay question that is not selected")
+  end
+
+  # Non-relay questions never carry a selection; keep that invariant even if
+  # a caller flips is_relay_question and is_selected_relay_question in the
+  # same request.
+  def normalize_relay_selection
+    self.is_selected_relay_question = false unless is_relay_question?
+  end
+
+  # At most one question may be selected at a time (enforced by a partial
+  # unique index). Clear any previously selected relay question inside the
+  # same transaction as this save, serialized by an advisory lock so two
+  # concurrent selections cannot both observe "no other row selected".
+  def unselect_other_relay_questions
+    return unless is_selected_relay_question?
+
+    self.class.connection.select_value("SELECT pg_advisory_xact_lock(#{RELAY_SELECTION_LOCK_KEY})")
+    scope = self.class.where(is_selected_relay_question: true)
+    scope = scope.where.not(id:) if persisted?
+    scope.update_all(is_selected_relay_question: false)
   end
 
   def scoring_fields_changed?
