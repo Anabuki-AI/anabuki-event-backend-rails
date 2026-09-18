@@ -175,7 +175,10 @@ jobs:
           cf_config="$RUNNER_TEMP/cloudflare-curl.conf"
           printf 'silent\nshow-error\nfail-with-body\nheader = "Authorization: Bearer %s"\nheader = "Accept: application/json"\n' "$CF_API_TOKEN" > "$cf_config"
           chmod 600 "$cf_config"
-          verify=$(curl --config "$cf_config" "https://api.cloudflare.com/client/v4/user/tokens/verify")
+          # The production token is account-owned (cfat_), so token
+          # verification must use the account-scoped endpoint; the user
+          # endpoint answers 401 for account-owned tokens.
+          verify=$(curl --config "$cf_config" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens/verify")
           test "$(jq -r '.success' <<<"$verify")" = true
           account=$(curl --config "$cf_config" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID")
           test "$(jq -r '.success' <<<"$account")" = true
