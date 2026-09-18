@@ -533,6 +533,43 @@ RSpec.describe "Admin question management", type: :request do
     expect(response.parsed_body).to include("isSelectedRelayQuestion" => false)
   end
 
+  it "reports isLiveQuestion for the question currently on the progression screen, independent of relay selection" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+
+    post_question(question_payload.merge(isRelayQuestion: true))
+    relay = response.parsed_body
+    post_question(question_payload(question_text: "2問目"))
+    other = response.parsed_body
+
+    get "/api/admin/questions"
+    expect(response.parsed_body.map { |q| q.fetch("isLiveQuestion") }).to eq([ false, false ])
+
+    put "/api/admin/questions/#{relay.fetch('id')}", params: question_payload.merge(isRelayQuestion: true, isSelectedRelayQuestion: true), as: :json
+    expect(response.parsed_body).to include("isSelectedRelayQuestion" => true, "isLiveQuestion" => false)
+
+    # Selecting a relay question as "this round's question" never touches
+    # quiz_sessions -- it must not be reported as live by itself.
+    get "/api/admin/questions/#{relay.fetch('id')}"
+    expect(response.parsed_body).to include("isLiveQuestion" => false)
+
+    QuizSession.current.start!
+    get "/api/admin/questions/#{relay.fetch('id')}"
+    expect(response.parsed_body).to include("isLiveQuestion" => true)
+    get "/api/admin/questions/#{other.fetch('id')}"
+    expect(response.parsed_body).to include("isLiveQuestion" => false)
+
+    QuizSession.current.reveal!
+    get "/api/admin/questions/#{relay.fetch('id')}"
+    expect(response.parsed_body).to include("isLiveQuestion" => true)
+    expect(response.parsed_body.fetch("revealedAt")).to be_present
+
+    QuizSession.current.publish_next!
+    get "/api/admin/questions/#{relay.fetch('id')}"
+    expect(response.parsed_body).to include("isLiveQuestion" => false)
+    get "/api/admin/questions/#{other.fetch('id')}"
+    expect(response.parsed_body).to include("isLiveQuestion" => true)
+  end
+
   it "does not restrict correctAnswer changes for a non-relay question" do
     authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
 
