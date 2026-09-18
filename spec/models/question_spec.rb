@@ -154,4 +154,74 @@ RSpec.describe Question do
     expect(question).not_to be_valid
     expect(question.errors).to include(:image)
   end
+
+  describe "relay question selection" do
+    it "allows setting correct_answer on create even for a relay question (never selected yet)" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+
+      expect(question).to have_attributes(is_relay_question: true, is_selected_relay_question: false, correct_answer: "A")
+    end
+
+    it "rejects changing correct_answer on update for a relay question that is not selected" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+
+      question.correct_answer = "B"
+      expect(question).not_to be_valid
+      expect(question.errors.where(:correct_answer)).to be_present
+      expect { question.save! }.to raise_error(ActiveRecord::RecordInvalid)
+    end
+
+    it "allows changing correct_answer on update once the relay question is selected" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+      question.update!(is_selected_relay_question: true)
+
+      question.update!(correct_answer: "B")
+      expect(question.reload.correct_answer).to eq("B")
+    end
+
+    it "allows changing correct_answer on update for a non-relay question regardless of selection" do
+      question = described_class.create!(valid_attributes)
+
+      question.update!(correct_answer: "C")
+      expect(question.reload.correct_answer).to eq("C")
+    end
+
+    it "allows selecting and changing correct_answer in the same update" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+
+      question.update!(is_selected_relay_question: true, correct_answer: "D")
+      expect(question.reload).to have_attributes(is_selected_relay_question: true, correct_answer: "D")
+    end
+
+    it "selects only one relay question at a time, deselecting the previous selection" do
+      first = described_class.create!(valid_attributes.merge(is_relay_question: true))
+      second = described_class.create!(valid_attributes.merge(position: 2, question_text: "2問目", is_relay_question: true))
+
+      first.update!(is_selected_relay_question: true)
+      expect(first.reload.is_selected_relay_question).to be(true)
+
+      second.update!(is_selected_relay_question: true)
+      expect(second.reload.is_selected_relay_question).to be(true)
+      expect(first.reload.is_selected_relay_question).to be(false)
+    end
+
+    it "allows deselecting a relay question, leaving none selected" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+      question.update!(is_selected_relay_question: true)
+
+      question.update!(is_selected_relay_question: false)
+      expect(question.reload.is_selected_relay_question).to be(false)
+    end
+
+    it "forces is_selected_relay_question to false when a question is not (or is no longer) a relay question" do
+      non_relay = described_class.create!(valid_attributes.merge(is_selected_relay_question: true))
+      expect(non_relay.reload.is_selected_relay_question).to be(false)
+
+      relay = described_class.create!(valid_attributes.merge(position: 2, question_text: "2問目", is_relay_question: true))
+      relay.update!(is_selected_relay_question: true)
+
+      relay.update!(is_relay_question: false)
+      expect(relay.reload).to have_attributes(is_relay_question: false, is_selected_relay_question: false)
+    end
+  end
 end

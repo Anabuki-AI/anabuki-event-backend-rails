@@ -11,6 +11,7 @@ class AdminQuestionsController < ApplicationController
     explanation: "explanation",
     target_audience: "targetAudience",
     is_relay_question: "isRelayQuestion",
+    is_selected_relay_question: "isSelectedRelayQuestion",
     position: "position",
     points: "points",
     time_limit_seconds: "timeLimitSeconds"
@@ -104,6 +105,9 @@ class AdminQuestionsController < ApplicationController
     attributes[:explanation] = parameter_value(:explanation) if parameter_provided?(:explanation)
     attributes[:target_audience] = parameter_value(:targetAudience, :target_audience) if parameter_provided?(:targetAudience, :target_audience)
     attributes[:is_relay_question] = ActiveModel::Type::Boolean.new.cast(parameter_value(:isRelayQuestion, :is_relay_question)) if parameter_provided?(:isRelayQuestion, :is_relay_question)
+    if parameter_provided?(:isSelectedRelayQuestion, :is_selected_relay_question)
+      attributes[:is_selected_relay_question] = ActiveModel::Type::Boolean.new.cast(parameter_value(:isSelectedRelayQuestion, :is_selected_relay_question))
+    end
     attributes[:points] = Integer(parameter_value(:points)) if points_provided?
     attributes[:time_limit_seconds] = parsed_time_limit_seconds if time_limit_seconds_provided?
     attributes
@@ -222,6 +226,7 @@ class AdminQuestionsController < ApplicationController
       explanation: question.explanation,
       targetAudience: question.target_audience,
       isRelayQuestion: question.is_relay_question,
+      isSelectedRelayQuestion: question.is_selected_relay_question,
       points: question.points,
       timeLimitSeconds: question.time_limit_seconds,
       createdAt: question.created_at.iso8601,
