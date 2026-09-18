@@ -212,6 +212,12 @@ class AdminQuestionsController < ApplicationController
     render json: { error: question.errors.full_messages.to_sentence, fieldErrors: field_errors }, status: :unprocessable_content
   end
 
+  # Memoized so index (one query for many questions) does not look up/create
+  # the singleton QuizSession row once per question.
+  def current_quiz_session
+    @current_quiz_session ||= QuizSession.current
+  end
+
   def question_json(question)
     {
       id: question.id,
@@ -227,6 +233,16 @@ class AdminQuestionsController < ApplicationController
       targetAudience: question.target_audience,
       isRelayQuestion: question.is_relay_question,
       isSelectedRelayQuestion: question.is_selected_relay_question,
+      # True while this is quiz_sessions.current_question and the quiz is
+      # in_progress, i.e. exactly the condition Question#protect_live_question
+      # uses to reject edits to correct_answer (and the other LIVE_FIELDS).
+      # "Selected as this round's relay question" (isSelectedRelayQuestion) and
+      # "currently live on the progression screen" (isLiveQuestion) are
+      # independent states -- a question can be selected without being live
+      # yet, or (as reported) still be live/just-revealed after selection was
+      # already moved to another question. Without this flag the admin UI had
+      # no way to tell the two apart before a save attempt failed.
+      isLiveQuestion: current_quiz_session.status == "in_progress" && current_quiz_session.current_question_id == question.id,
       # Set once by QuizSession#reveal! when this question's answer was shown
       # live; never cleared except by a full QuizSession#reset!. Lets the
       # admin UI tell "already asked" relay questions apart from ones that
