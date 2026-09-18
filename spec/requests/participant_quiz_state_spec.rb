@@ -74,6 +74,7 @@ RSpec.describe "Participant quiz state", type: :request do
         "question_text" => "Question 1",
         "choices" => { "A" => "choice A", "B" => "choice B", "C" => "choice C", "D" => "choice D" },
         "eliminated_choice" => nil,
+        "is_live_relay_question" => false,
         "image_url" => nil
       },
       "answered" => false,
@@ -83,6 +84,17 @@ RSpec.describe "Participant quiz state", type: :request do
       "confidence_locked" => false,
       "confidence_multipliers" => { "high" => 2.0, "normal" => 1.0, "low" => 0.5 }
     )
+  end
+
+  it "marks a selected relay question as live for participants" do
+    sign_in
+    question.update!(is_relay_question: true, is_selected_relay_question: true)
+    QuizSession.current.start!
+
+    get "/api/participant/quiz/state"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("question", "is_live_relay_question")).to be(true)
   end
 
   it "exposes an attached image only through the current participant quiz route" do

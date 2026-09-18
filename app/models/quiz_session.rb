@@ -110,6 +110,8 @@ class QuizSession < ApplicationRecord
         raise InvalidTransition, "Answers are not being accepted for this question"
       elsif ParticipantAnswer.exists?(participant:, question:)
         raise InvalidTransition, "Confidence level cannot be changed after answering"
+      elsif confidence_level == "low" && live_relay_question?(question)
+        raise InvalidTransition, "Lv.1 cannot be selected for a live relay question"
       else
         existing = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
         if existing.nil?
@@ -314,6 +316,10 @@ class QuizSession < ApplicationRecord
     candidates = %w[A B C D] - [ question.correct_answer ]
     candidates -= [ choice ] if choice.present?
     candidates.sample
+  end
+
+  def live_relay_question?(question)
+    question&.is_relay_question? && question.is_selected_relay_question?
   end
 
   def require_status!(expected, message)
