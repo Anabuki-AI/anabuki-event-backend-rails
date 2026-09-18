@@ -1,6 +1,6 @@
 class OperatorQuizController < ApplicationController
   before_action :authorize_event_operator!
-  before_action :require_operator_same_origin!, only: %i[start publish close reveal finish reset]
+  before_action :require_operator_same_origin!, only: %i[start publish update_correct_answer close reveal finish reset]
 
   rescue_from QuizSession::InvalidTransition do |error|
     render_error(error.message, :unprocessable_content)
@@ -17,6 +17,11 @@ class OperatorQuizController < ApplicationController
 
   def publish
     QuizSession.current.publish_next!
+    render json: quiz_state
+  end
+
+  def update_correct_answer
+    QuizSession.current.update_live_correct_answer!(params[:correct_answer])
     render json: quiz_state
   end
 
@@ -101,6 +106,10 @@ class OperatorQuizController < ApplicationController
         "D" => question.choice_d
       },
       image_url: question_image_url(question),
+      is_relay_question: question.is_relay_question,
+      is_selected_relay_question: question.is_selected_relay_question,
+      revealed_at: question.revealed_at&.iso8601,
+      live_correct_answer_confirmed: question.live_correct_answer_confirmed_at.present?,
       correct_answer: question.correct_answer,
       time_limit_seconds: question.time_limit_seconds,
       answered_count:,

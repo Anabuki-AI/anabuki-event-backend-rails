@@ -179,6 +179,48 @@ RSpec.describe Question do
       expect(question.reload.correct_answer).to eq("B")
     end
 
+    it "allows the live quiz session to set the correct answer for a selected relay question" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true, is_selected_relay_question: true))
+      session = QuizSession.current
+      session.start!
+
+      expect { session.update_live_correct_answer!("C") }.not_to raise_error
+      question.reload
+      expect(question.correct_answer).to eq("C")
+      expect(question.live_correct_answer_confirmed_at).to be_present
+    end
+
+    it "rejects a live correct_answer change for a relay question that is not selected" do
+      described_class.create!(valid_attributes.merge(is_relay_question: true))
+      session = QuizSession.current
+      session.start!
+
+      expect { session.update_live_correct_answer!("C") }.to raise_error(QuizSession::InvalidTransition)
+    end
+
+    it "rejects a live correct_answer change once the question has been revealed" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true, is_selected_relay_question: true))
+      session = QuizSession.current
+      session.start!
+      session.reveal!
+
+      expect { session.update_live_correct_answer!("C") }.to raise_error(QuizSession::InvalidTransition)
+      expect(question.reload.correct_answer).to eq("A")
+    end
+
+    it "still enforces the live-question lock for fields other than correct_answer during a live correct_answer update" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true, is_selected_relay_question: true))
+      session = QuizSession.current
+      session.start!
+
+      question.allow_live_correct_answer_change = true
+      question.correct_answer = "C"
+      question.question_text = "書き換え禁止"
+      expect { question.save! }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(question.errors[:question_text]).to be_present
+      expect(question.errors[:correct_answer]).to be_empty
+    end
+
     it "allows changing correct_answer on update for a non-relay question regardless of selection" do
       question = described_class.create!(valid_attributes)
 
