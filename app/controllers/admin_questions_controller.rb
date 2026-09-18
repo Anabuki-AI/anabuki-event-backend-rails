@@ -27,11 +27,8 @@ class AdminQuestionsController < ApplicationController
   end
 
   def image
-    authorize_admin!(Question, :show?)
-    question = Question.find(params[:id])
-    return head :not_found unless question.image.attached?
-
-    send_data question.image.download, type: question.image.content_type, disposition: "inline"
+    authorize_event_operator!
+    render_attached_question_image(Question.find(params[:id]))
   end
 
   def create
@@ -78,15 +75,19 @@ class AdminQuestionsController < ApplicationController
     question.destroy!
     AuditLogRecorder.record(type: "QUESTION_DELETED", identity: audit_actor_identity, target_type: "QUESTION", target_id: question.id)
     head :no_content
+  rescue ActiveRecord::RecordNotDestroyed => error
+    render_question_validation_error(error.record)
   end
 
   private
 
   def assign_image(question)
     if params[:image].present?
-      question.image.attach(params[:image])
+      question.image = params[:image]
     elsif params[:removeImage].to_s == "true" && question.persisted? && question.image.attached?
-      question.image.purge
+      # Stage detachment for save; Active Storage purges the old blob only
+      # after commit. A failed validation must leave the original file intact.
+      question.image = nil
     end
   end
 

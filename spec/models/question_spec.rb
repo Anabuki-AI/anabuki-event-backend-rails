@@ -99,6 +99,47 @@ RSpec.describe Question do
     expect(fractional.errors).to include(:time_limit_seconds)
   end
 
+  %w[answering closing closed revealed].each do |phase|
+    it "protects current question gameplay fields during #{phase}, even with no answers" do
+      question = described_class.create!(valid_attributes)
+      QuizSession.current.update!(status: "in_progress", current_question: question, phase:)
+
+      expect { question.update!(correct_answer: "B", choice_a: "Changed", points: 200, time_limit_seconds: 5) }
+        .to raise_error(ActiveRecord::RecordInvalid)
+      expect(question.errors.attribute_names).to include(:correct_answer, :choice_a, :points, :time_limit_seconds)
+      expect(question.reload).to have_attributes(correct_answer: "A", choice_a: "A", points: 100, time_limit_seconds: nil)
+      expect { question.destroy! }.to raise_error(ActiveRecord::RecordNotDestroyed)
+    end
+  end
+
+  it "allows future question edits while another question is live" do
+    described_class.create!(valid_attributes)
+    future = described_class.create!(valid_attributes.merge(position: 2))
+    QuizSession.current.start!
+
+    expect { future.update!(correct_answer: "B", choice_a: "Changed") }.not_to raise_error
+  end
+
+  it "protects revealed history even when no participant answered and the object is stale" do
+    question = described_class.create!(valid_attributes)
+    stale = described_class.find(question.id)
+    QuizSession.current.start!
+    QuizSession.current.reveal!
+    QuizSession.current.finish!
+
+    expect { stale.destroy! }.to raise_error(ActiveRecord::RecordNotDestroyed)
+    expect(described_class.exists?(question.id)).to be(true)
+  end
+
+  it "permits deleting a question again after an explicit debug reset clears its history" do
+    question = described_class.create!(valid_attributes)
+    QuizSession.current.start!
+    QuizSession.current.reveal!
+    QuizSession.current.reset!
+
+    expect { question.destroy! }.to change(described_class, :count).by(-1)
+  end
+
   it "validates an attached image's content type and size" do
     question = described_class.new(valid_attributes.merge(position: 99))
     question.image.attach(io: StringIO.new("not an image"), filename: "notes.txt", content_type: "text/plain")

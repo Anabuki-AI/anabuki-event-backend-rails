@@ -12,6 +12,8 @@ class Question < ApplicationRecord
   MIN_POINTS = 1
   MAX_POINTS = 1000
   MAX_TIME_LIMIT_SECONDS = 2_147_483_647
+  LIVE_FIELDS = %w[question_text choice_a choice_b choice_c choice_d correct_answer
+    points time_limit_seconds image_url position is_relay_question].freeze
 
   has_one_attached :image
 
@@ -30,6 +32,8 @@ class Question < ApplicationRecord
   validate :image_is_valid_upload
 
   before_validation :normalize_text_attributes
+  around_update :protect_live_question
+  around_destroy :protect_used_question, prepend: true
   after_update :recalculate_participant_answer_scores, if: :scoring_fields_changed?
 
   class << self
@@ -46,6 +50,35 @@ class Question < ApplicationRecord
   end
 
   private
+
+  # Use the session -> question lock order shared by answer recording and
+  # progression. Checking before taking that lock races with start/publish and
+  # confidence selection (especially the server-chosen Lv.1 elimination).
+  def protect_live_question
+    session = QuizSession.current
+    session.with_lock do
+      if session.status == "in_progress" && session.current_question_id == id
+        (changes_to_save.keys & LIVE_FIELDS).each do |field|
+          errors.add(field, "cannot be changed while this question is live")
+        end
+        errors.add(:image, "cannot be changed while this question is live") if attachment_changes.key?("image")
+        raise ActiveRecord::RecordInvalid, self if errors.any?
+      end
+      yield
+    end
+  end
+
+  def protect_used_question
+    QuizSession.current.with_lock do
+      if QuizSession.where(current_question_id: id).exists? || self.class.where(id:).where.not(revealed_at: nil).exists? ||
+          ParticipantAnswer.where(question_id: id).exists? ||
+          ParticipantQuizConfidenceSelection.where(question_id: id).exists?
+        errors.add(:base, "A current or previously used question cannot be deleted")
+        raise ActiveRecord::RecordNotDestroyed.new(errors.full_messages.to_sentence, self)
+      end
+      yield
+    end
+  end
 
   def scoring_fields_changed?
     saved_change_to_correct_answer? || saved_change_to_points?

@@ -53,6 +53,8 @@ class QuizSession < ApplicationRecord
       lock!
       require_status!("in_progress", "Quiz is not in progress")
 
+      require_phase!("revealed", "Reveal the current answer before publishing the next question")
+
       question = next_question
       raise InvalidTransition, "There are no more questions" unless question
 
@@ -75,16 +77,12 @@ class QuizSession < ApplicationRecord
       lock!
       question = current_question
 
-      if requested_close_expired?
-        update!(phase: "closed", phase_started_at: Time.current)
+      if answer_deadline && Time.current >= answer_deadline
+        close_expired_answer_window_under_lock!
         expired = true
         nil
       elsif !answer_window_matches?(question, question_id)
         raise InvalidTransition, "Answers are not being accepted for this question"
-      elsif answer_window_expired?(question)
-        update!(phase: "closed", phase_started_at: Time.current)
-        expired = true
-        nil
       else
         existing = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
         if existing
@@ -116,16 +114,12 @@ class QuizSession < ApplicationRecord
       lock!
       question = current_question
 
-      if requested_close_expired?
-        update!(phase: "closed", phase_started_at: Time.current)
+      if answer_deadline && Time.current >= answer_deadline
+        close_expired_answer_window_under_lock!
         expired = true
         nil
       elsif !answer_window_matches?(question, question_id)
         raise InvalidTransition, "Answers are not being accepted for this question"
-      elsif answer_window_expired?(question)
-        update!(phase: "closed", phase_started_at: Time.current)
-        expired = true
-        nil
       else
         selection = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
         raise InvalidTransition, "Select a confidence level before answering" unless selection
@@ -140,10 +134,20 @@ class QuizSession < ApplicationRecord
     answer
   end
 
+  # Reads and transitions can finalize an expired window without a Que worker.
+  # Recheck under the same row lock used by answers/reset/publish: a stale poll
+  # must never close a newer question. The deadline, not poll time, is canonical.
+  def close_expired_answer_window!
+    return self unless answer_deadline && Time.current >= answer_deadline
+
+    with_lock { close_expired_answer_window_under_lock! }
+    self
+  end
+
   # Starts the ten-second, participant-visible countdown requested by an
-  # operator. Answers remain accepted until CloseQuizAnswersJob finalizes it.
+  # operator. The job is an optimization; requests also enforce the deadline.
   def request_close!
-    closing_started_at = transaction do
+    question_id, closing_started_at = transaction do
       lock!
       require_status!("in_progress", "Quiz is not in progress")
       require_phase!("answering", "Answers are already being closed")
@@ -155,21 +159,28 @@ class QuizSession < ApplicationRecord
         phase: "closing", phase_started_at: started_at,
         answering_started_at: answering_started_at || phase_started_at
       )
-      started_at
+      [ current_question_id, started_at ]
     end
 
     CloseQuizAnswersJob.set(wait_until: closing_started_at + ANSWER_CLOSE_DELAY)
-      .perform_later(current_question_id, closing_started_at.iso8601(6))
+      .perform_later(question_id, closing_started_at.iso8601(6))
   end
 
-  # Used for automatic per-question time limits, which must remain immediate.
+  # Automatic expiry only (the legacy API calls this with immediate: true).
+  # A browser clock is just a hint: verify the configured question deadline
+  # under the row lock. Manual close must use request_close! instead.
   def close!
     transaction do
       lock!
       require_status!("in_progress", "Quiz is not in progress")
-      require_phase!("answering", "Answers are already closed")
+      raise InvalidTransition, "Answers are already closed" unless phase.in?(%w[answering closing])
 
-      update!(phase: "closed", phase_started_at: Time.current)
+      deadline = question_deadline
+      unless deadline && Time.current >= deadline
+        raise InvalidTransition, "Question time limit has not expired"
+      end
+
+      close_expired_answer_window_under_lock!
     end
   end
 
@@ -183,7 +194,7 @@ class QuizSession < ApplicationRecord
       return unless phase_started_at == closing_started_at
       return if Time.current < phase_started_at + ANSWER_CLOSE_DELAY
 
-      update!(phase: "closed", phase_started_at: Time.current)
+      close_expired_answer_window_under_lock!
     end
   end
 
@@ -191,6 +202,7 @@ class QuizSession < ApplicationRecord
     transaction do
       lock!
       require_status!("in_progress", "Quiz is not in progress")
+      close_expired_answer_window_under_lock!
       unless phase.in?(%w[answering closed])
         raise InvalidTransition, "Answer is already revealed"
       end
@@ -240,24 +252,34 @@ class QuizSession < ApplicationRecord
 
   private
 
-  def answer_window_matches?(question, question_id)
-    status == "in_progress" && phase.in?(%w[answering closing]) && question && question.id == question_id.to_i
+  def answer_deadline
+    return unless status == "in_progress" && phase.in?(%w[answering closing])
+
+    deadlines = []
+    deadlines << phase_started_at + ANSWER_CLOSE_DELAY if phase == "closing" && phase_started_at
+    deadlines << question_deadline if question_deadline
+    deadlines.min
   end
 
-  def requested_close_expired?
-    phase == "closing" && phase_started_at.present? && Time.current >= phase_started_at + ANSWER_CLOSE_DELAY
+  def question_deadline
+    started_at = answering_started_at || phase_started_at
+    limit = current_question&.time_limit_seconds
+    started_at + limit.seconds if started_at && limit
+  end
+
+  def close_expired_answer_window_under_lock!
+    deadline = answer_deadline
+    update!(phase: "closed", phase_started_at: deadline) if deadline && Time.current >= deadline
+  end
+
+  def answer_window_matches?(question, question_id)
+    status == "in_progress" && phase.in?(%w[answering closing]) && question && question.id == question_id.to_i
   end
 
   def eliminated_choice_for(question, confidence_level)
     return nil unless confidence_level == "low"
 
     (%w[A B C D] - [ question.correct_answer ]).sample
-  end
-
-  def answer_window_expired?(question)
-    limit = question.time_limit_seconds
-    started_at = answering_started_at || phase_started_at
-    limit.present? && started_at.present? && Time.current >= started_at + limit.seconds
   end
 
   def require_status!(expected, message)

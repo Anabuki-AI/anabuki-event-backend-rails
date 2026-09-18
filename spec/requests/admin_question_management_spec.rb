@@ -12,11 +12,15 @@ RSpec.describe "Admin question management", type: :request do
     get "/api/admin/questions"
     expect(response).to have_http_status(:unauthorized)
     expect(response.parsed_body.fetch("error")).to eq("Authentication is required")
+    get "/api/admin/questions/1/image"
+    expect(response).to have_http_status(:unauthorized)
 
     authenticate_as(build_session("APPLICANT"))
     get "/api/admin/questions"
     expect(response).to have_http_status(:forbidden)
     expect(response.parsed_body.fetch("error")).to eq("Management page access is required")
+    get "/api/admin/questions/1/image"
+    expect(response).to have_http_status(:forbidden)
   end
 
   it "creates, orders, shows, updates, and hard-deletes questions" do
@@ -78,6 +82,129 @@ RSpec.describe "Admin question management", type: :request do
 
     get "/api/admin/questions/#{created.fetch('id')}/image"
     expect(response).to have_http_status(:not_found)
+  end
+
+  it "preserves the original attachment and bytes on invalid removal or replacement" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    post "/api/admin/questions", params: question_payload.merge(image: fixture_file_upload("question.webp", "image/webp"))
+    question = Question.find(response.parsed_body.fetch("id"))
+    blob = question.image.blob
+    bytes = blob.download
+
+    [ { removeImage: "true" }, { image: fixture_file_upload("notes.txt", "text/plain") },
+      { image: fixture_file_upload("question.webp", "image/webp") } ].each do |image_change|
+      put "/api/admin/questions/#{question.id}", params: question_payload(question_text: " ").merge(image_change)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(question.reload.image.blob.id).to eq(blob.id)
+      expect(blob.download).to eq(bytes)
+      get "/api/admin/questions/#{question.id}/image"
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to eq(bytes)
+    end
+  end
+
+  it "replaces an image only after a successful update" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    post "/api/admin/questions", params: question_payload.merge(image: fixture_file_upload("question.webp", "image/webp"))
+    question = Question.find(response.parsed_body.fetch("id"))
+    old_blob_id = question.image.blob.id
+
+    put "/api/admin/questions/#{question.id}", params: question_payload.merge(image: fixture_file_upload("question.webp", "image/webp"))
+    expect(response).to have_http_status(:ok)
+    expect(question.reload.image.blob.id).not_to eq(old_blob_id)
+    get "/api/admin/questions/#{question.id}/image"
+    expect(response).to have_http_status(:ok)
+  end
+
+  it "rejects deleting the current question before it receives any answers" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    question = Question.create!(question_attributes(position: 1))
+    QuizSession.current.start!
+
+    delete "/api/admin/questions/#{question.id}"
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("base")
+    expect(QuizSession.current.current_question_id).to eq(question.id)
+    expect(Question.exists?(question.id)).to be(true)
+    expect(AuditLog.where(event_type: "QUESTION_DELETED")).not_to exist
+  end
+
+  it "retains answered questions, scores and rankings after finish instead of cascading deletion" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    ConfidenceMultiplier.all_levels
+    question = Question.create!(question_attributes(position: 1))
+    answer = create_participant_answer(question:, choice: "A", confidence_level: "high")
+    QuizSession.current.start!
+    QuizSession.current.reveal!
+    QuizSession.current.finish!
+    get "/api/rankings"
+    rankings = response.parsed_body
+    expect(rankings.fetch("rankings")).not_to be_empty
+
+    delete "/api/admin/questions/#{question.id}"
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(answer.reload.awarded_points).to eq(200)
+    expect(Question.exists?(question.id)).to be(true)
+    get "/api/rankings"
+    expect(response.parsed_body).to eq(rankings)
+  end
+
+  it "retains a past question with a confidence selection even without an answer" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    question = Question.create!(question_attributes(position: 1))
+    participant = Participant.create!(display_name: "Player", gender: "no_answer", age_group: "20s", student_type: "not_student", agreed_terms: true)
+    session = QuizSession.current
+    session.start!
+    selection = session.confirm_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
+    session.finish!
+
+    delete "/api/admin/questions/#{question.id}"
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(ParticipantQuizConfidenceSelection.exists?(selection.id)).to be(true)
+  end
+
+  it "rejects live answer and choice edits, keeping Lv.1 elimination, answers and displayed choices consistent" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    ConfidenceMultiplier.all_levels
+    question = Question.create!(question_attributes(position: 1))
+    participant = Participant.create!(display_name: "Player", gender: "no_answer", age_group: "20s", student_type: "not_student", agreed_terms: true)
+    session = QuizSession.current
+    session.start!
+    selection = session.confirm_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
+    answer = session.record_answer!(participant:, question_id: question.id, choice: "A")
+
+    put "/api/admin/questions/#{question.id}", params: question_payload(correct_answer: selection.eliminated_choice, choice_a: "Changed"), as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("correctAnswer", "choiceA")
+    expect(question.reload.correct_answer).to eq("A")
+    expect(answer.reload).to have_attributes(choice: "A", awarded_points: 50)
+    token = SecureRandom.urlsafe_base64(32, false)
+    ParticipantSession.create!(participant:, token_hash: Digest::SHA256.digest(token), expires_at: 1.hour.from_now)
+    cookies["participant_session"] = token
+    get "/api/participant/quiz/state"
+    expect(response.parsed_body.dig("question", "choices")).to include("A" => "選択肢A")
+    expect(response.parsed_body.dig("question", "choices")).not_to have_key(selection.eliminated_choice)
+    expect(response.parsed_body.dig("my_answer", "choice")).to eq("A")
+    expect(selection.reload.eliminated_choice).not_to eq(question.correct_answer)
+  end
+
+  it "rejects live image removal without losing its blob" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    post "/api/admin/questions", params: question_payload.merge(image: fixture_file_upload("question.webp", "image/webp"))
+    question = Question.find(response.parsed_body.fetch("id"))
+    blob = question.image.blob
+    QuizSession.current.start!
+
+    put "/api/admin/questions/#{question.id}", params: question_payload.merge(removeImage: "true")
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("fieldErrors")).to include("image")
+    expect(question.reload.image.blob.id).to eq(blob.id)
+    expect(blob.download).to eq(File.binread(Rails.root.join("spec/fixtures/files/question.webp")))
   end
 
   it "rejects an oversized explanation, target audience, or invalid image upload" do
