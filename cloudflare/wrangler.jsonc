@@ -8,6 +8,13 @@
   "workers_dev": false,
   "compatibility_date": "2026-08-10",
   "compatibility_flags": ["nodejs_compat"],
+  // Keep the Rails Container warm only during JST daytime (08:00-23:59).
+  // JST 08:00 is UTC 23:00 on the previous day; the two UTC windows cover
+  // UTC 23:00 and UTC 00:00-14:59. Nighttime (JST 00:00-07:59) is left idle
+  // to avoid active-duration cost, and the first 08:00 ping warms it again.
+  "triggers": {
+    "crons": ["*/5 0-14 * * *", "*/5 23 * * *"]
+  },
   "containers": [
     {
       "class_name": "RailsContainer",
