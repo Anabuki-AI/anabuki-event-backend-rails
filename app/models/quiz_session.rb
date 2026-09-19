@@ -284,6 +284,16 @@ class QuizSession < ApplicationRecord
     end
   end
 
+  # Used when the live question is bulk-deleted: return the progression to the
+  # initial "waiting" state (same session columns as reset!, but participant
+  # data is left alone). Caller must already hold the lock.
+  def clear_live_question!
+    update!(
+      status: "waiting", current_question: nil, phase: nil, phase_started_at: Time.current,
+      answering_started_at: nil, finished_elapsed_seconds: nil
+    )
+  end
+
   private
 
   def answer_deadline
