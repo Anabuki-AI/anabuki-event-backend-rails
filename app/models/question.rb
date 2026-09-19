@@ -63,6 +63,31 @@ class Question < ApplicationRecord
     def next_position
       maximum(:position).to_i + 1
     end
+
+    # Deletes a question and closes the gap it leaves so positions stay 1..n.
+    # A used question is still rejected by the destroy callback, which raises
+    # and rolls the whole transaction back.
+    def destroy_and_renumber!(question)
+      transaction do
+        with_position_lock do
+          question.destroy!
+          renumber_positions_after!(question.position)
+        end
+      end
+    end
+
+    # Shifts every position greater than +deleted_position+ down by one.
+    # positions are unique and must stay > 0, so a single decrement could
+    # collide mid-statement and a negative parking value violates the CHECK.
+    # Park the rows above the current maximum first, then bring them back.
+    def renumber_positions_after!(deleted_position)
+      scope = where("position > ?", deleted_position)
+      return unless scope.exists?
+
+      offset = maximum(:position)
+      scope.update_all([ "position = position + ?", offset ])
+      where("position > ?", offset).update_all([ "position = position - ? - 1", offset ])
+    end
   end
 
   private

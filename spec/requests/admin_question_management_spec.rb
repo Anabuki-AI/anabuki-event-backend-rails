@@ -56,7 +56,7 @@ RSpec.describe "Admin question management", type: :request do
     expect { Question.find(first.fetch("id")) }.to raise_error(ActiveRecord::RecordNotFound)
 
     get "/api/admin/questions"
-    expect(response.parsed_body.map { |question| question.fetch("position") }).to eq([ 2 ])
+    expect(response.parsed_body.map { |question| question.fetch("position") }).to eq([ 1 ])
   end
 
   it "uploads, serves, and removes a question image alongside explanation and target audience text" do
@@ -149,6 +149,33 @@ RSpec.describe "Admin question management", type: :request do
     expect(Question.exists?(question.id)).to be(true)
     get "/api/rankings"
     expect(response.parsed_body).to eq(rankings)
+  end
+
+  it "renumbers remaining questions to 1..n after deleting the first, a middle, and the last question" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    questions = (1..5).map { |n| Question.create!(question_attributes(position: n).merge(question_text: "Q#{n}")) }
+
+    delete "/api/admin/questions/#{questions[0].id}", headers: same_origin_headers
+    expect(response).to have_http_status(:no_content)
+    expect(Question.order(:position).pluck(:question_text, :position)).to eq([ [ "Q2", 1 ], [ "Q3", 2 ], [ "Q4", 3 ], [ "Q5", 4 ] ])
+
+    delete "/api/admin/questions/#{questions[2].id}", headers: same_origin_headers
+    expect(Question.order(:position).pluck(:question_text, :position)).to eq([ [ "Q2", 1 ], [ "Q4", 2 ], [ "Q5", 3 ] ])
+
+    delete "/api/admin/questions/#{questions[4].id}", headers: same_origin_headers
+    expect(Question.order(:position).pluck(:question_text, :position)).to eq([ [ "Q2", 1 ], [ "Q4", 2 ] ])
+  end
+
+  it "does not renumber when deleting a used question is rejected" do
+    authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+    used = Question.create!(question_attributes(position: 1).merge(question_text: "used"))
+    Question.create!(question_attributes(position: 2).merge(question_text: "next"))
+    used.update_columns(revealed_at: Time.current)
+
+    delete "/api/admin/questions/#{used.id}", headers: same_origin_headers
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(Question.order(:position).pluck(:question_text, :position)).to eq([ [ "used", 1 ], [ "next", 2 ] ])
   end
 
   it "retains a past question with a confidence selection even without an answer" do
