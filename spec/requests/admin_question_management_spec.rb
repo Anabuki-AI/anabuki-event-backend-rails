@@ -1,4 +1,5 @@
 require "rails_helper"
+require "aws-sdk-s3"
 
 RSpec.describe "Admin question management", type: :request do
   QuestionManagementSessionFixture = Data.define(:identity, :device, :session_key, :cookie_name)
@@ -114,6 +115,41 @@ RSpec.describe "Admin question management", type: :request do
     expect(question.reload.image.blob.id).not_to eq(old_blob_id)
     get "/api/admin/questions/#{question.id}/image"
     expect(response).to have_http_status(:ok)
+  end
+
+  context "when the object storage upload fails" do
+    before { authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true)) }
+
+    def stub_upload_failure(error)
+      allow_any_instance_of(ActiveStorage::Blob).to receive(:upload_without_unfurling).and_raise(error)
+    end
+
+    it "returns 502 JSON and leaves the question untouched on update" do
+      post "/api/admin/questions", params: question_payload(question_text: "before")
+      question = Question.find(response.parsed_body.fetch("id"))
+      stub_upload_failure(Aws::S3::Errors::InternalError.new(nil, "r2 boom"))
+      allow(Rails.logger).to receive(:error).and_call_original
+
+      put "/api/admin/questions/#{question.id}", params: question_payload(question_text: "after").merge(image: fixture_file_upload("question.webp", "image/webp"))
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.parsed_body.fetch("error")).to include("画像の保存に失敗")
+      expect(Rails.logger).to have_received(:error).with(/Aws::S3::Errors::InternalError: r2 boom/)
+      expect(question.reload.question_text).to eq("before")
+      expect(question.image).not_to be_attached
+      expect(ActiveStorage::Attachment.count).to eq(0)
+    end
+
+    it "returns 502 JSON for network errors and creates no question on create" do
+      stub_upload_failure(Seahorse::Client::NetworkingError.new(StandardError.new("timeout"), "timeout"))
+
+      expect {
+        post "/api/admin/questions", params: question_payload.merge(image: fixture_file_upload("question.webp", "image/webp"))
+      }.not_to change(Question, :count)
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.parsed_body).to have_key("error")
+    end
   end
 
   it "rejects deleting the current question before it receives any answers" do
