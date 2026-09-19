@@ -629,6 +629,142 @@ RSpec.describe "Admin question management", type: :request do
 
   private
 
+  describe "POST /api/admin/questions/bulk_destroy" do
+    let(:operator) { build_session("MANAGEMENT_ACCESS", admin_enabled: true) }
+
+    def bulk_destroy(ids)
+      post "/api/admin/questions/bulk_destroy", params: { ids: }, as: :json, headers: same_origin_headers
+    end
+
+    def create_questions(count)
+      (1..count).map { |n| Question.create!(question_attributes(position: n).merge(question_text: "Q#{n}")) }
+    end
+
+    it "requires authentication and operator access" do
+      bulk_destroy([ 1 ])
+      expect(response).to have_http_status(:unauthorized)
+
+      authenticate_as(build_session("APPLICANT"))
+      bulk_destroy([ 1 ])
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "deletes the selected questions, renumbers the rest and writes one audit log per question" do
+      authenticate_as(operator)
+      questions = create_questions(5)
+
+      bulk_destroy([ questions[0].id, questions[2].id, questions[4].id ])
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to eq("deletedCount" => 3, "deletedIds" => [ questions[0].id, questions[2].id, questions[4].id ])
+      expect(Question.order(:position).pluck(:question_text, :position)).to eq([ [ "Q2", 1 ], [ "Q4", 2 ] ])
+      logs = AuditLog.where(event_type: "QUESTION_DELETED")
+      expect(logs.pluck(:target_id)).to match_array(questions.values_at(0, 2, 4).map { |q| q.id.to_s })
+      expect(logs.first.detail).to eq("bulk" => true)
+    end
+
+    it "deletes revealed, answered and live questions with their answers and confidence selections" do
+      authenticate_as(operator)
+      ConfidenceMultiplier.all_levels
+      questions = create_questions(3)
+      participant = Participant.create!(display_name: "Player", gender: "no_answer", age_group: "20s", student_type: "not_student", agreed_terms: true)
+      session = QuizSession.current
+      session.start!
+      answer = create_participant_answer(question: questions[0], choice: "A", confidence_level: "high")
+      session.reveal!
+      session.publish_next!
+      selection = session.select_confidence_level!(participant:, question_id: questions[1].id, confidence_level: "low")
+      expect(session.reload.current_question_id).to eq(questions[1].id)
+
+      bulk_destroy(questions.map(&:id))
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("deletedCount")).to eq(3)
+      expect(Question.count).to eq(0)
+      expect(ParticipantAnswer.exists?(answer.id)).to be(false)
+      expect(ParticipantQuizConfidenceSelection.exists?(selection.id)).to be(false)
+    end
+
+    it "puts the session back to waiting when the live question is deleted, leaving other questions intact" do
+      authenticate_as(operator)
+      questions = create_questions(3)
+      QuizSession.current.start!
+
+      bulk_destroy([ questions[0].id ])
+
+      expect(response).to have_http_status(:ok)
+      session = QuizSession.current
+      expect([ session.status, session.current_question_id, session.phase ]).to eq([ "waiting", nil, nil ])
+      expect(Question.order(:position).pluck(:question_text, :position)).to eq([ [ "Q2", 1 ], [ "Q3", 2 ] ])
+    end
+
+    it "keeps the live session untouched when the live question is not selected" do
+      authenticate_as(operator)
+      questions = create_questions(3)
+      QuizSession.current.start!
+
+      bulk_destroy([ questions[2].id ])
+
+      expect(response).to have_http_status(:ok)
+      session = QuizSession.current
+      expect([ session.status, session.current_question_id ]).to eq([ "in_progress", questions[0].id ])
+    end
+
+    it "is all-or-nothing: unknown ids return 404 and delete nothing" do
+      authenticate_as(operator)
+      questions = create_questions(2)
+
+      bulk_destroy([ questions[0].id, 999_999 ])
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.parsed_body).to include("missingIds" => [ 999_999 ])
+      expect(Question.count).to eq(2)
+      expect(AuditLog.where(event_type: "QUESTION_DELETED")).not_to exist
+    end
+
+    it "rejects missing, empty and malformed ids" do
+      authenticate_as(operator)
+      create_questions(1)
+
+      [ nil, [], "1", [ "abc" ], [ 1, { a: 1 } ] ].each do |ids|
+        bulk_destroy(ids)
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+      expect(Question.count).to eq(1)
+    end
+
+    it "accepts duplicate ids and numeric strings" do
+      authenticate_as(operator)
+      questions = create_questions(2)
+
+      bulk_destroy([ questions[0].id, questions[0].id.to_s ])
+
+      expect(response.parsed_body.fetch("deletedCount")).to eq(1)
+    end
+
+    it "does not change single-delete protection for used questions" do
+      authenticate_as(operator)
+      questions = create_questions(2)
+      QuizSession.current.start!
+
+      delete "/api/admin/questions/#{questions[0].id}", headers: same_origin_headers
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(Question.exists?(questions[0].id)).to be(true)
+    end
+
+    it "exposes hasParticipantData on the question list" do
+      authenticate_as(operator)
+      ConfidenceMultiplier.all_levels
+      questions = create_questions(2)
+      create_participant_answer(question: questions[0], choice: "A", confidence_level: "high")
+
+      get "/api/admin/questions"
+
+      expect(response.parsed_body.map { |q| q.fetch("hasParticipantData") }).to eq([ true, false ])
+    end
+  end
+
   def post_question(payload)
     post "/api/admin/questions", params: payload, as: :json
   end

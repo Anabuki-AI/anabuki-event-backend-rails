@@ -20,6 +20,9 @@ class Question < ApplicationRecord
   has_one_attached :image
 
   attr_accessor :allow_live_correct_answer_change
+  # Set only by Question.bulk_destroy!, which deliberately deletes used
+  # (revealed / answered / live) questions. Single delete never sets it.
+  attr_accessor :skip_used_question_protection
 
   validates :question_text, presence: true, length: { maximum: MAX_QUESTION_TEXT_LENGTH }
   validates :choice_a, :choice_b, :choice_c, :choice_d, presence: true, length: { maximum: MAX_CHOICE_LENGTH }
@@ -52,6 +55,15 @@ class Question < ApplicationRecord
   before_save :unselect_other_relay_questions, if: :will_save_change_to_is_selected_relay_question?
   after_update :recalculate_participant_answer_scores, if: :scoring_fields_changed?
 
+  class BulkDestroyMissing < StandardError
+    attr_reader :missing_ids
+
+    def initialize(missing_ids)
+      @missing_ids = missing_ids
+      super("Questions not found: #{missing_ids.join(', ')}")
+    end
+  end
+
   class << self
     # PostgreSQL advisory locks serialize position allocation even before a
     # first row exists, avoiding duplicate positions from concurrent creates.
@@ -74,6 +86,48 @@ class Question < ApplicationRecord
           renumber_positions_after!(question.position)
         end
       end
+    end
+
+    # Deletes every question in +ids+ in one transaction (all-or-nothing),
+    # INCLUDING revealed / answered / currently live ones (their answers and
+    # confidence selections go away via ON DELETE CASCADE). If the live question
+    # is among them the quiz session is put back to "waiting" first, because
+    # quiz_sessions.current_question_id has a plain FK. Remaining positions are
+    # renumbered to 1..n. Returns the deleted ids.
+    def bulk_destroy!(ids)
+      ids = ids.uniq
+      transaction do
+        session = QuizSession.current
+        session.with_lock do
+          questions = where(id: ids).order(:position).to_a
+          missing = ids - questions.map(&:id)
+          raise BulkDestroyMissing.new(missing) if missing.any?
+
+          session.clear_live_question! if ids.include?(session.current_question_id)
+          with_position_lock do
+            questions.each do |question|
+              question.skip_used_question_protection = true
+              question.destroy!
+            end
+            renumber_all_positions!
+          end
+          questions.map(&:id)
+        end
+      end
+    end
+
+    # Reassigns positions 1..n in the current order. Parks every row above the
+    # current maximum first so the unique index never sees a duplicate.
+    def renumber_all_positions!
+      return unless exists?
+
+      offset = maximum(:position)
+      update_all([ "position = position + ?", offset ])
+      connection.execute(<<~SQL.squish)
+        UPDATE questions SET position = ranked.new_position
+        FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY position) AS new_position FROM questions) ranked
+        WHERE questions.id = ranked.id
+      SQL
     end
 
     # Shifts every position greater than +deleted_position+ down by one.
@@ -112,6 +166,8 @@ class Question < ApplicationRecord
   end
 
   def protect_used_question
+    return yield if skip_used_question_protection
+
     QuizSession.current.with_lock do
       if QuizSession.where(current_question_id: id).exists? || self.class.where(id:).where.not(revealed_at: nil).exists? ||
           ParticipantAnswer.where(question_id: id).exists? ||

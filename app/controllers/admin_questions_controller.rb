@@ -80,7 +80,35 @@ class AdminQuestionsController < ApplicationController
     render_question_validation_error(error.record)
   end
 
+  # Deletes several questions at once, including revealed / answered / live
+  # ones (see Question.bulk_destroy!). Unlike #destroy this intentionally skips
+  # the used-question protection; the UI confirms with the operator first.
+  def bulk_destroy
+    require_same_origin!
+    authorize_event_operator!
+    ids = bulk_destroy_ids
+    return render json: { error: "ids must be a non-empty array of question ids" }, status: :unprocessable_content unless ids
+
+    deleted_ids = Question.bulk_destroy!(ids)
+    deleted_ids.each do |id|
+      AuditLogRecorder.record(type: "QUESTION_DELETED", identity: audit_actor_identity, target_type: "QUESTION", target_id: id, detail: { "bulk" => true })
+    end
+    render json: { deletedCount: deleted_ids.size, deletedIds: deleted_ids }
+  rescue Question::BulkDestroyMissing => error
+    render json: { error: "Questions not found", missingIds: error.missing_ids }, status: :not_found
+  end
+
   private
+
+  # Returns a unique Array of Integer ids, or nil when the parameter is missing,
+  # empty, not an array, or contains anything that is not a whole number.
+  def bulk_destroy_ids
+    raw = params[:ids]
+    return nil unless raw.is_a?(Array) && raw.any?
+    return nil unless raw.all? { |v| v.is_a?(Integer) || (v.is_a?(String) && v.match?(/\A\d+\z/)) }
+
+    raw.map { |v| v.is_a?(Integer) ? v : Integer(v, 10) }.uniq
+  end
 
   def assign_image(question)
     if params[:image].present?
@@ -218,6 +246,14 @@ class AdminQuestionsController < ApplicationController
     @current_quiz_session ||= QuizSession.current
   end
 
+  # Ids of questions that have any participant answer or confidence selection.
+  # One pair of queries per request; used by the admin UI to warn before a
+  # bulk delete that would also erase participant records.
+  def question_ids_with_participant_data
+    @question_ids_with_participant_data ||=
+      (ParticipantAnswer.distinct.pluck(:question_id) + ParticipantQuizConfidenceSelection.distinct.pluck(:question_id)).to_set
+  end
+
   def question_json(question)
     {
       id: question.id,
@@ -248,6 +284,7 @@ class AdminQuestionsController < ApplicationController
       # admin UI tell "already asked" relay questions apart from ones that
       # are merely unselected and have never been asked yet.
       revealedAt: question.revealed_at&.iso8601,
+      hasParticipantData: question_ids_with_participant_data.include?(question.id),
       points: question.points,
       timeLimitSeconds: question.time_limit_seconds,
       createdAt: question.created_at.iso8601,
