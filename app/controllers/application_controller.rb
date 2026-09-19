@@ -18,6 +18,24 @@ class ApplicationController < ActionController::API
     render_error(error.message, error.status)
   end
 
+  # Object storage (Cloudflare R2 in production) failures surface here when
+  # Active Storage uploads inside a save. The surrounding transaction has
+  # already rolled back, so no partial DB state remains. Class names are given
+  # as strings because aws-sdk-s3 is loaded lazily by ActiveStorage.
+  STORAGE_UNAVAILABLE_ERRORS = %w[
+    Aws::Errors::ServiceError
+    Aws::Sigv4::Errors::MissingCredentialsError
+    Seahorse::Client::NetworkingError
+    ActiveStorage::IntegrityError
+    ActiveStorage::FileNotFoundError
+  ].freeze
+
+  rescue_from(*STORAGE_UNAVAILABLE_ERRORS) do |error|
+    Rails.logger.error("[storage] #{error.class}: #{error.message}\n#{Array(error.backtrace).first(20).join("\n")}")
+    Sentry.capture_exception(error) if defined?(Sentry) && Sentry.initialized?
+    render_error("画像の保存に失敗しました。時間をおいて再度お試しください。", :bad_gateway)
+  end
+
   private
 
   # AdminAuth remains the single authority for validating the device-bound

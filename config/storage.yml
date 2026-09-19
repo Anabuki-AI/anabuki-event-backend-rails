@@ -16,6 +16,11 @@ r2:
   region: <%= ENV.fetch("R2_REGION", "auto") %>
   bucket: <%= ENV.fetch("R2_BUCKET", "") %>
   force_path_style: true
+  # aws-sdk-s3 >= 1.178 adds CRC32 checksum trailers to every request by
+  # default, which R2 may reject. Only compute/validate when an operation
+  # actually requires it (see .agent notes for the 2026-09 image PUT 500).
+  request_checksum_calculation: when_required
+  response_checksum_validation: when_required
 
 # Use bin/rails credentials:edit to set the AWS secrets (as aws:access_key_id|secret_access_key)
 # amazon:

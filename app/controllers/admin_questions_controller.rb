@@ -43,7 +43,7 @@ class AdminQuestionsController < ApplicationController
     Question.transaction do
       Question.with_position_lock do
         question.position = Question.next_position
-        question.save!
+        save_with_image_upload!(question)
       end
     end
 
@@ -62,7 +62,7 @@ class AdminQuestionsController < ApplicationController
 
     question.assign_attributes(question_attributes)
     assign_image(question)
-    question.save!
+    Question.transaction { save_with_image_upload!(question) }
     AuditLogRecorder.record(type: "QUESTION_UPDATED", identity: audit_actor_identity, target_type: "QUESTION", target_id: question.id)
     render json: question_json(question)
   rescue ActiveRecord::RecordInvalid => error
@@ -108,6 +108,17 @@ class AdminQuestionsController < ApplicationController
     return nil unless raw.all? { |v| v.is_a?(Integer) || (v.is_a?(String) && v.match?(/\A\d+\z/)) }
 
     raw.map { |v| v.is_a?(Integer) ? v : Integer(v, 10) }.uniq
+  end
+
+  # Active Storage normally uploads the file in an after_commit callback, so a
+  # storage outage (R2) would leave the row committed with an attachment whose
+  # file does not exist. Run the same upload step inside the caller's
+  # transaction instead: a failure raises before commit and rolls everything
+  # back (ApplicationController renders it as 502). after_commit then finds
+  # nothing left to upload.
+  def save_with_image_upload!(question)
+    question.save!
+    question.attachment_changes.delete("image").try(:upload)
   end
 
   def assign_image(question)
