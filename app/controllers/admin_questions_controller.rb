@@ -73,7 +73,7 @@ class AdminQuestionsController < ApplicationController
     require_same_origin!
     authorize_event_operator!
     question = Question.find(params[:id])
-    question.destroy!
+    Question.destroy_and_renumber!(question)
     AuditLogRecorder.record(type: "QUESTION_DELETED", identity: audit_actor_identity, target_type: "QUESTION", target_id: question.id)
     head :no_content
   rescue ActiveRecord::RecordNotDestroyed => error
