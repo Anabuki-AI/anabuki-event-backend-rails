@@ -182,6 +182,25 @@ RSpec.describe QuizSession do
     expect(ParticipantQuizConfidenceSelection).to be_none
   end
 
+  it "rejects Lv.1 while a relay question is live without creating a selection" do
+    question = create_question(position: 1)
+    question.update!(is_relay_question: true, is_selected_relay_question: true)
+    participant = Participant.create!(
+      display_name: "Player",
+      gender: "no_answer",
+      age_group: "20s",
+      student_type: "not_student",
+      agreed_terms: true
+    )
+    session = described_class.current
+    session.start!
+
+    expect {
+      session.select_confidence_level!(participant:, question_id: question.id, confidence_level: "low")
+    }.to raise_error(QuizSession::InvalidTransition, "Lv.1 cannot be selected for a live relay question")
+    expect(ParticipantQuizConfidenceSelection).to be_none
+  end
+
   it "stamps phase_started_at when reset! forces the session back to waiting" do
     create_question(position: 1)
     session = described_class.current

@@ -118,6 +118,15 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(response.parsed_body["confidence_locked"]).to be(true)
   end
 
+  it "rejects Lv.1 for a live relay question because its incorrect choices are not fixed yet", question_attributes: { is_relay_question: true, is_selected_relay_question: true } do
+    expect {
+      confirm_confidence("low")
+    }.not_to change(ParticipantQuizConfidenceSelection, :count)
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body["error"]).to include("live relay question")
+  end
+
   it "never eliminates the choice the participant is currently selecting" do
     confirm_confidence("low", choice: "A")
 

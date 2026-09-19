@@ -137,6 +137,7 @@ class ParticipantQuizController < ApplicationController
         "D" => question.choice_d
       },
       eliminated_choice: selection&.eliminated_choice,
+      is_live_relay_question: question.is_relay_question? && question.is_selected_relay_question?,
       image_url: question_image_url(question)
     }
   end
