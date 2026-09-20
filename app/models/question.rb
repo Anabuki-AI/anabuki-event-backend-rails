@@ -270,6 +270,9 @@ class Question < ApplicationRecord
   def image_is_valid_upload
     return unless image.attached?
 
+    # 保存形式はWEBPのみ。フロントエンドが任意の画像形式をWEBPへ変換してから送信する。
+    # image.content_type は Active Storage が中身(マジックバイト)から判定した値なので、
+    # 拡張子/申告Content-Typeだけ webp で中身がPNG等のファイルはここで弾かれる。
     unless image.content_type.in?(ALLOWED_IMAGE_CONTENT_TYPES)
       errors.add(:image, "must be a WEBP file")
     end
