@@ -98,6 +98,20 @@ class AdminQuestionsController < ApplicationController
     render json: { error: "Questions not found", missingIds: error.missing_ids }, status: :not_found
   end
 
+  def reorder
+    require_same_origin!
+    authorize_event_operator!
+    ids = question_order_ids
+    return render json: { error: "questionIds must be an array of positive integer ids" }, status: :unprocessable_content unless ids
+
+    Question.reorder!(ids)
+    render json: Question.order(:position).map { |question| question_json(question) }
+  rescue Question::ReorderMismatch
+    render json: { error: "Question list has changed. Reload and try again." }, status: :unprocessable_content
+  rescue Question::ReorderDuringLiveQuiz
+    render json: { error: "Questions cannot be reordered while a quiz is in progress." }, status: :unprocessable_content
+  end
+
   private
 
   # Returns a unique Array of Integer ids, or nil when the parameter is missing,
@@ -108,6 +122,14 @@ class AdminQuestionsController < ApplicationController
     return nil unless raw.all? { |v| v.is_a?(Integer) || (v.is_a?(String) && v.match?(/\A\d+\z/)) }
 
     raw.map { |v| v.is_a?(Integer) ? v : Integer(v, 10) }.uniq
+  end
+
+  def question_order_ids
+    raw = params[:questionIds]
+    return nil unless raw.is_a?(Array)
+    return nil unless raw.all? { |id| id.is_a?(Integer) && id.positive? }
+
+    raw
   end
 
   # Active Storage normally uploads the file in an after_commit callback, so a
