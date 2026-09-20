@@ -1,6 +1,7 @@
 class ParticipantsController < ApplicationController
   def create
     require_participant_same_origin!
+    reject_existing_participant_session!
 
     participant = Participant.new(participant_params)
     raw_token = nil
@@ -17,6 +18,14 @@ class ParticipantsController < ApplicationController
 
   def me
     session = participant_auth.current_session!
+    render json: participant_json(session.participant, session.expires_at)
+  end
+
+  def update
+    require_participant_same_origin!
+
+    session = participant_auth.current_session!
+    session.participant.update!(display_name: params[:displayName].to_s.strip)
     render json: participant_json(session.participant, session.expires_at)
   end
 
@@ -58,6 +67,12 @@ class ParticipantsController < ApplicationController
   end
 
   private
+
+  def reject_existing_participant_session!
+    return unless participant_auth.current_session
+
+    raise ParticipantAuthError.new("Participant session already exists", :conflict)
+  end
 
   def participant_params
     {
