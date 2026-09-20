@@ -64,6 +64,9 @@ class Question < ApplicationRecord
     end
   end
 
+  ReorderMismatch = Class.new(StandardError)
+  ReorderDuringLiveQuiz = Class.new(StandardError)
+
   class << self
     # PostgreSQL advisory locks serialize position allocation even before a
     # first row exists, avoiding duplicate positions from concurrent creates.
@@ -112,6 +115,25 @@ class Question < ApplicationRecord
             renumber_all_positions!
           end
           questions.map(&:id)
+        end
+      end
+    end
+
+    # Applies a complete client-supplied order atomically. The quiz session is
+    # locked first to preserve the same lock order as live-question updates.
+    def reorder!(ids)
+      transaction do
+        session = QuizSession.current
+        session.with_lock do
+          raise ReorderDuringLiveQuiz if session.status == "in_progress"
+
+          with_position_lock do
+            raise ReorderMismatch unless order(:id).pluck(:id) == ids.sort
+
+            offset = maximum(:position).to_i
+            update_all([ "position = position + ?", offset ]) if offset.positive?
+            ids.each_with_index { |id, index| where(id:).update_all(position: index + 1) }
+          end
         end
       end
     end

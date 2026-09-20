@@ -663,6 +663,46 @@ RSpec.describe "Admin question management", type: :request do
     expect(Question.find(question.fetch("id")).correct_answer).to eq(Question::RELAY_QUESTION_DEFAULT_CORRECT_ANSWER)
   end
 
+  describe "PATCH /api/admin/questions/reorder" do
+    def reorder_questions(ids)
+      patch "/api/admin/questions/reorder", params: { questionIds: ids }, as: :json, headers: same_origin_headers
+    end
+
+    it "applies a complete order and renumbers every position" do
+      authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+      questions = (1..4).map { |n| Question.create!(question_attributes(position: n).merge(question_text: "Q#{n}")) }
+
+      reorder_questions([ questions[1].id, questions[3].id, questions[0].id, questions[2].id ])
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.map { |question| question.fetch("id") }).to eq([ questions[1].id, questions[3].id, questions[0].id, questions[2].id ])
+      expect(Question.order(:position).pluck(:question_text, :position)).to eq([ [ "Q2", 1 ], [ "Q4", 2 ], [ "Q1", 3 ], [ "Q3", 4 ] ])
+    end
+
+    it "rejects stale, duplicate, or malformed complete orders without changing positions" do
+      authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+      questions = (1..3).map { |n| Question.create!(question_attributes(position: n).merge(question_text: "Q#{n}")) }
+      original = Question.order(:position).pluck(:id, :position)
+
+      [ [ questions[0].id, questions[1].id ], [ questions[0].id, questions[1].id, questions[1].id ], [ "1", questions[1].id, questions[2].id ] ].each do |ids|
+        reorder_questions(ids)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Question.order(:position).pluck(:id, :position)).to eq(original)
+      end
+    end
+
+    it "rejects reordering while a quiz is in progress" do
+      authenticate_as(build_session("MANAGEMENT_ACCESS", admin_enabled: true))
+      (1..2).each { |n| Question.create!(question_attributes(position: n)) }
+      QuizSession.current.start!
+
+      reorder_questions(Question.order(:position).pluck(:id).reverse)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(Question.order(:position).pluck(:position)).to eq([ 1, 2 ])
+    end
+  end
+
   private
 
   describe "POST /api/admin/questions/bulk_destroy" do

@@ -20,6 +20,7 @@ Rails.application.routes.draw do
     get "/admin/questions", to: "admin_questions#index"
     post "/admin/questions", to: "admin_questions#create"
     post "/admin/questions/bulk_destroy", to: "admin_questions#bulk_destroy"
+    patch "/admin/questions/reorder", to: "admin_questions#reorder"
     get "/admin/questions/:id", to: "admin_questions#show"
     get "/admin/questions/:id/image", to: "admin_questions#image"
     put "/admin/questions/:id", to: "admin_questions#update"
