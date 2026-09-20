@@ -150,6 +150,14 @@ RSpec.describe Question do
     question.image.attach(io: StringIO.new("RIFFWEBP".b), filename: "question.webp", content_type: "image/webp")
     expect(question).to be_valid
 
+    png = "\x89PNG\r\n\x1a\n".b + ("0" * 32)
+    question.image.attach(io: StringIO.new(png), filename: "fake.webp", content_type: "image/webp")
+    expect(question).not_to be_valid
+    expect(question.errors[:image]).to include("must be a WEBP file")
+
+    question.image.attach(io: StringIO.new("RIFF\x00\x00\x00\x00WEBPVP8 ".b), filename: "renamed.png", content_type: "image/png")
+    expect(question).to be_valid
+
     question.image.attach(io: StringIO.new("x" * (described_class::MAX_IMAGE_BYTE_SIZE + 1)), filename: "big.webp", content_type: "image/webp")
     expect(question).not_to be_valid
     expect(question.errors).to include(:image)
