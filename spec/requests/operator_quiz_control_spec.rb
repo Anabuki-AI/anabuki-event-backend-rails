@@ -96,6 +96,7 @@ RSpec.describe "Operator quiz control", type: :request do
         "revealed_at" => nil,
         "live_correct_answer_confirmed" => false,
         "correct_answer" => "B",
+        "explanation" => nil,
         "time_limit_seconds" => 30,
         "answered_count" => 0,
         "answered_rate" => 0.0
