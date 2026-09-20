@@ -42,10 +42,16 @@ class ParticipantQuizController < ApplicationController
   end
 
   def create
+    confidence_level = params[:confidence_level].presence
+    if confidence_level && !ConfidenceMultiplier.all_levels.key?(confidence_level)
+      return render_error("confidence_level is invalid", :unprocessable_content)
+    end
+
     answer = QuizSession.current.record_answer!(
       participant: current_participant,
       question_id: params[:question_id],
-      choice: params[:choice]
+      choice: params[:choice],
+      confidence_level:
     )
 
     status = answer.previously_new_record? ? :created : :ok

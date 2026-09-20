@@ -1,5 +1,6 @@
 # One answer per participant per question. The selected confidence level is
-# immutable, while the choice can be corrected until the answer window closes.
+# immutable once it is Lv.1 (なし); Lv.2/Lv.3 can be switched together with the
+# choice until the answer window closes.
 # Question edits explicitly recalculate only answers for the edited question.
 class ParticipantAnswer < ApplicationRecord
   class AlreadyRecorded < StandardError; end
@@ -17,10 +18,15 @@ class ParticipantAnswer < ApplicationRecord
     existing = find_by(participant:, question:)
     if existing
       return existing if existing.choice == choice && existing.confidence_level == confidence_level
-      raise AlreadyRecorded, "Confidence level cannot be changed" unless existing.confidence_level == confidence_level
+      # Lv.1 is one-way (it eliminated a choice), so it can never be changed;
+      # Lv.2/Lv.3 may be switched together with a re-submitted choice.
+      if existing.confidence_level != confidence_level && (existing.confidence_level == "low" || confidence_level == "low")
+        raise AlreadyRecorded, "Confidence level cannot be changed"
+      end
 
       existing.update!(
         choice:,
+        confidence_level:,
         awarded_points: awarded_points_for(question:, choice:, confidence_level:, multiplier:)
       )
       return existing

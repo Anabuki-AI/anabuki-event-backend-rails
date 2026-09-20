@@ -59,9 +59,9 @@ RSpec.describe "Participant quiz answers", type: :request do
       as: :json
   end
 
-  def submit_answer(choice: "B", question_id: question.id)
+  def submit_answer(choice: "B", question_id: question.id, confidence_level: nil)
     post "/api/participant/quiz/answers",
-      params: { question_id:, choice: },
+      params: { question_id:, choice:, confidence_level: }.compact,
       headers: origin_headers,
       as: :json
   end
@@ -105,6 +105,49 @@ RSpec.describe "Participant quiz answers", type: :request do
 
     expect(response).to have_http_status(:conflict)
     expect(ParticipantQuizConfidenceSelection.sole.confidence_level).to eq("normal")
+  end
+
+  it "changes Lv.2/Lv.3 together with a re-submitted answer and recalculates points" do
+    confirm_confidence("normal")
+    submit_answer(choice: "B")
+    expect(ParticipantAnswer.sole.awarded_points).to eq(100)
+
+    submit_answer(choice: "B", confidence_level: "high")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["my_answer"]).to eq("choice" => "B", "confidence_level" => "high")
+    expect(ParticipantAnswer.sole).to have_attributes(confidence_level: "high", awarded_points: 200)
+    expect(ParticipantQuizConfidenceSelection.sole.confidence_level).to eq("high")
+  end
+
+  it "does not change the confidence level of an answer recorded with Lv.1" do
+    confirm_confidence("low", choice: "B")
+    submit_answer(choice: "B")
+
+    submit_answer(choice: "B", confidence_level: "high")
+
+    expect(response).to have_http_status(:conflict)
+    expect(ParticipantAnswer.sole.confidence_level).to eq("low")
+    expect(ParticipantQuizConfidenceSelection.sole.confidence_level).to eq("low")
+  end
+
+  it "does not allow switching to Lv.1 after answering" do
+    confirm_confidence("normal")
+    submit_answer(choice: "B")
+
+    submit_answer(choice: "B", confidence_level: "low")
+
+    expect(response).to have_http_status(:conflict)
+    expect(ParticipantAnswer.sole.confidence_level).to eq("normal")
+    expect(ParticipantQuizConfidenceSelection.sole).to have_attributes(confidence_level: "normal", eliminated_choice: nil)
+  end
+
+  it "rejects an invalid confidence_level on answer submission" do
+    confirm_confidence("normal")
+
+    submit_answer(choice: "B", confidence_level: "bogus")
+
+    expect(response).to have_http_status(:unprocessable_content)
   end
 
   it "eliminates one incorrect choice for Lv.1 and reports it without removing the option" do

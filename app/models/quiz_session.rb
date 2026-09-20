@@ -142,7 +142,12 @@ class QuizSession < ApplicationRecord
     selection
   end
 
-  def record_answer!(participant:, question_id:, choice:)
+  # Records (or re-submits) the participant's answer. `confidence_level` is
+  # optional: when it differs from the stored selection it is applied together
+  # with the answer, but only between Lv.2/Lv.3. Lv.1 ("なし") is never
+  # changeable, neither away from nor to it after selection, because its
+  # elimination is one-way.
+  def record_answer!(participant:, question_id:, choice:, confidence_level: nil)
     expired = false
     answer = transaction do
       lock!
@@ -158,6 +163,14 @@ class QuizSession < ApplicationRecord
         selection = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
         raise InvalidTransition, "Select a confidence level before answering" unless selection
         raise InvalidTransition, "This choice was eliminated by Lv.1" if selection.eliminated_choice == choice
+
+        if confidence_level.present? && confidence_level != selection.confidence_level
+          if selection.confidence_level == "low" || confidence_level == "low"
+            raise InvalidTransition, "Lv.1 confidence level cannot be changed"
+          end
+
+          selection.update!(confidence_level:)
+        end
 
         ParticipantAnswer.record!(participant:, question:, choice:, confidence_level: selection.confidence_level)
       end
