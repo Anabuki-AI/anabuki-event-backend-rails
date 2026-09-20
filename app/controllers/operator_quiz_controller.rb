@@ -111,6 +111,7 @@ class OperatorQuizController < ApplicationController
       revealed_at: question.revealed_at&.iso8601,
       live_correct_answer_confirmed: question.live_correct_answer_confirmed_at.present?,
       correct_answer: question.correct_answer,
+      explanation: question.explanation,
       time_limit_seconds: question.time_limit_seconds,
       answered_count:,
       answered_rate: answered_rate(answered_count, total_participants)

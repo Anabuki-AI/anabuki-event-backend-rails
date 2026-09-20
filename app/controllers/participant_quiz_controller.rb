@@ -93,6 +93,8 @@ class ParticipantQuizController < ApplicationController
     state[:answered] = my_answer.present?
     state[:my_answer] = my_answer && my_answer_json(my_answer)
     state[:correct_answer] = quiz_session.phase == "revealed" ? question&.correct_answer : nil
+    # Explanation is revealed together with the correct answer, never earlier.
+    state[:explanation] = quiz_session.phase == "revealed" ? question&.explanation : nil
     state[:confidence_level] = selection&.confidence_level || my_answer&.confidence_level
     # Only Lv.1 and a recorded answer freeze the level; Lv.2/Lv.3 stay switchable.
     state[:confidence_locked] = selection&.confidence_level == "low" || my_answer.present?
