@@ -51,10 +51,23 @@ RSpec.describe "Participant registration", type: :request do
     expect(set_cookie).to include("httponly", "samesite=lax", "secure")
   end
 
-  it "allows duplicate display names because they are not authentication identifiers" do
+  it "rejects registration when the browser already has a valid participant session" do
+    post "/api/participants", params: registration, as: :json
+
+    expect {
+      post "/api/participants", params: registration.merge(displayName: "Another Player"), as: :json
+    }.not_to change(Participant, :count)
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to eq("error" => "Participant session already exists")
+  end
+
+  it "allows duplicate display names in separate participant sessions" do
     2.times do
       post "/api/participants", params: registration, as: :json
       expect(response).to have_http_status(:created)
+      delete "/api/participants/session"
+      expect(response).to have_http_status(:no_content)
     end
 
     expect(Participant.where(display_name: registration[:displayName]).count).to eq(2)
@@ -68,6 +81,22 @@ RSpec.describe "Participant registration", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to eq(expected)
+  end
+
+  it "updates only the display name for the current participant" do
+    post "/api/participants", params: registration, as: :json
+    participant = Participant.sole
+
+    patch "/api/participants/me", params: { displayName: "Updated Player", gender: "tampered" }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("id" => participant.id, "displayName" => "Updated Player")
+    expect(participant.reload).to have_attributes(
+      display_name: "Updated Player",
+      gender: registration[:gender],
+      age_group: registration[:ageGroup],
+      agreed_terms: true
+    )
   end
 
   it "rejects a missing, expired, or revoked participant session" do
@@ -105,10 +134,14 @@ RSpec.describe "Participant registration", type: :request do
     expect(response.parsed_body.fetch("error")).to include("Agreed terms")
   end
 
-  it "rejects cross-origin registration and session deletion" do
+  it "rejects cross-origin registration, name updates, and session deletion" do
     headers = { "Origin" => "https://untrusted.example" }
 
     post "/api/participants", params: registration, headers:, as: :json
+    expect(response).to have_http_status(:forbidden)
+
+    post "/api/participants", params: registration, as: :json
+    patch "/api/participants/me", params: { displayName: "Tampered" }, headers:, as: :json
     expect(response).to have_http_status(:forbidden)
 
     delete "/api/participants/session", headers: headers
