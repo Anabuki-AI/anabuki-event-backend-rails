@@ -80,6 +80,7 @@ RSpec.describe "Participant quiz state", type: :request do
       "answered" => false,
       "my_answer" => nil,
       "correct_answer" => nil,
+      "explanation" => nil,
       "confidence_level" => nil,
       "confidence_locked" => false,
       "confidence_multipliers" => { "high" => 2.0, "normal" => 1.0, "low" => 0.5 }
@@ -206,6 +207,19 @@ RSpec.describe "Participant quiz state", type: :request do
 
     expect(response.parsed_body["phase"]).to eq("revealed")
     expect(response.parsed_body["correct_answer"]).to eq("B")
+  end
+
+  it "exposes the explanation only while revealed" do
+    sign_in
+    question.update!(explanation: "Because B is right.")
+    QuizSession.current.start!
+
+    get "/api/participant/quiz/state"
+    expect(response.parsed_body["explanation"]).to be_nil
+
+    QuizSession.current.reveal!
+    get "/api/participant/quiz/state"
+    expect(response.parsed_body["explanation"]).to eq("Because B is right.")
   end
 
   private
