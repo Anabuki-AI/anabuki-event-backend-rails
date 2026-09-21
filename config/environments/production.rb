@@ -1,4 +1,5 @@
 require "active_support/core_ext/integer/time"
+require_relative "../../lib/production_logging"
 
 fetch_encryption_key = lambda do |name|
   ENV.fetch(name).tap do |value|
@@ -43,7 +44,7 @@ Rails.application.configure do
 
   # Log to STDOUT with the current request id as a default log tag.
   config.log_tags = [ :request_id ]
-  config.logger   = ActiveSupport::TaggedLogging.logger(STDOUT)
+  config.logger = ProductionLogging.build
 
   # Change to "debug" to log everything (including potentially personally-identifiable information!)
   config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
@@ -58,6 +59,10 @@ Rails.application.configure do
   # config.cache_store = :mem_cache_store
 
   # Active Job uses Que (configured in application.rb); the worker runs separately.
+  config.active_job.log_arguments = false
+  config.after_initialize do
+    Que.log_formatter = ProductionLogging.que_formatter(Rails.application.config.filter_parameters)
+  end
 
   # Ignore bad email addresses and do not raise email delivery errors.
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.

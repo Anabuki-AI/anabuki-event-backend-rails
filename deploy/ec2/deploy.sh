@@ -5,6 +5,13 @@ set -Eeuo pipefail
 : "${APP_ROOT:=/opt/anabuki-event}"
 : "${ARCHIVE_PATH:?ARCHIVE_PATH is required}"
 
+# Compose bind sources must not resolve relative to a disposable release.
+mkdir -p "$APP_ROOT"
+APP_ROOT=$(cd "$APP_ROOT" && pwd -P)
+export SHARED_LOG_ROOT="$APP_ROOT/shared/log"
+mkdir -p "$SHARED_LOG_ROOT/api" "$SHARED_LOG_ROOT/worker"
+chmod 0750 "$SHARED_LOG_ROOT" "$SHARED_LOG_ROOT/api" "$SHARED_LOG_ROOT/worker"
+
 release_dir="$APP_ROOT/releases/$RELEASE_SHA"
 current_link="$APP_ROOT/current"
 shared_dir="$APP_ROOT/shared"
