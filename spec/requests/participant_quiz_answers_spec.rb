@@ -131,13 +131,27 @@ RSpec.describe "Participant quiz answers", type: :request do
     expect(ParticipantQuizConfidenceSelection.sole.confidence_level).to eq("low")
   end
 
-  it "does not allow switching to Lv.1 after answering" do
+  it "allows switching to Lv.1 after answering an ordinary question and chooses an elimination" do
+    confirm_confidence("normal")
+    submit_answer(choice: "B")
+
+    submit_answer(choice: "B", confidence_level: "low")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["my_answer"]).to eq("choice" => "B", "confidence_level" => "low")
+    expect(ParticipantAnswer.sole).to have_attributes(confidence_level: "low", awarded_points: 50)
+    expect(ParticipantQuizConfidenceSelection.sole.confidence_level).to eq("low")
+    expect(ParticipantQuizConfidenceSelection.sole.eliminated_choice).to be_in(%w[A C D])
+  end
+
+  it "still rejects switching to Lv.1 after answering a live relay question", question_attributes: { is_relay_question: true, is_selected_relay_question: true } do
     confirm_confidence("normal")
     submit_answer(choice: "B")
 
     submit_answer(choice: "B", confidence_level: "low")
 
     expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body["error"]).to include("live relay question")
     expect(ParticipantAnswer.sole.confidence_level).to eq("normal")
     expect(ParticipantQuizConfidenceSelection.sole).to have_attributes(confidence_level: "normal", eliminated_choice: nil)
   end
