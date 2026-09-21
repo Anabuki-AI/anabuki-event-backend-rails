@@ -29,12 +29,11 @@ RSpec.describe TournamentReset do
       student_type: "not_student",
       agreed_terms: true
     )
-    participant_session = ParticipantSession.create!(
+    ParticipantSession.create!(
       participant:,
       token_hash: Digest::SHA256.digest(SecureRandom.urlsafe_base64(32, false)),
       expires_at: 1.hour.from_now
     )
-    ParticipantReaction.create!(participant:, participant_session:, reaction: "👍", reacted_at: Time.current)
     ParticipantQuizConfidenceSelection.create!(
       participant:,
       question:,
@@ -55,7 +54,6 @@ RSpec.describe TournamentReset do
 
     expect(Participant.count).to eq(1)
     expect(ParticipantSession.count).to eq(1)
-    expect(ParticipantReaction.count).to eq(1)
     expect(ParticipantAnswer.count).to eq(1)
     expect(ParticipantQuizConfidenceSelection.count).to eq(1)
     expect(question.reload.revealed_at).to be_present

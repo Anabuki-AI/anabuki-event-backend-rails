@@ -16,6 +16,9 @@ RSpec.describe "Production tournament reset", type: :request do
   let(:headers) { { "Origin" => "https://event.example" } }
   let(:reset_params) { { confirmation: "RESET" } }
 
+  before { ReactionEventStore.clear! }
+  after { ReactionEventStore.clear! }
+
   describe "authorization" do
     it "rejects anonymous and applicant operator sessions" do
       post "/api/operator/quiz/reset", params: reset_params, headers:, as: :json
@@ -86,6 +89,7 @@ RSpec.describe "Production tournament reset", type: :request do
   it "atomically purges participant data, resets live state, preserves configuration/staff/history, and audits exact counts" do
     actor = authenticate_operator(manager_enabled: true)
     fixture = create_full_tournament
+    ReactionEventStore.record(session_id: "reset-session", reaction: "👍")
     preserved_audit = AuditLog.create!(event_type: "ADMIN_LOGGED_OUT", occurred_at: 1.minute.ago)
     question_snapshot = Question.order(:id).pluck(
       :id, :position, :question_text, :choice_a, :choice_b, :choice_c, :choice_d, :correct_answer,
@@ -99,9 +103,9 @@ RSpec.describe "Production tournament reset", type: :request do
     expect(response).to have_http_status(:ok)
     expect(Participant).to be_none
     expect(ParticipantSession).to be_none
-    expect(ParticipantReaction).to be_none
     expect(ParticipantAnswer).to be_none
     expect(ParticipantQuizConfidenceSelection).to be_none
+    expect(ReactionEventStore.events_since(since: 1.minute.ago)).to eq([])
     expect(Question.where.not(revealed_at: nil)).to be_none
     expect(QuizSession.current.reload).to have_attributes(
       status: "waiting",
@@ -123,7 +127,6 @@ RSpec.describe "Production tournament reset", type: :request do
     expected_rows = {
       "participants" => 2,
       "participant_sessions" => 2,
-      "participant_reactions" => 1,
       "participant_answers" => 1,
       "confidence_selections" => 1,
       "question_reveals" => 1,
@@ -151,7 +154,6 @@ RSpec.describe "Production tournament reset", type: :request do
     expect(entry.detail).to eq(
       "participantsDeleted" => 2,
       "participantSessionsDeleted" => 2,
-      "participantReactionsDeleted" => 1,
       "participantAnswersDeleted" => 1,
       "confidenceSelectionsDeleted" => 1,
       "questionRevealsReset" => 1,
@@ -208,14 +210,8 @@ RSpec.describe "Production tournament reset", type: :request do
     )
     participant = create_participant("Player one")
     second_participant = create_participant("Player two")
-    participant_session = create_participant_session(participant)
+    create_participant_session(participant)
     create_participant_session(second_participant)
-    ParticipantReaction.create!(
-      participant:,
-      participant_session:,
-      reaction: "👍",
-      reacted_at: Time.current
-    )
 
     quiz_session = QuizSession.current
     quiz_session.start!
@@ -242,7 +238,6 @@ RSpec.describe "Production tournament reset", type: :request do
       counts: {
         participants: Participant.count,
         participant_sessions: ParticipantSession.count,
-        participant_reactions: ParticipantReaction.count,
         participant_answers: ParticipantAnswer.count,
         confidence_selections: ParticipantQuizConfidenceSelection.count,
         audit_logs: AuditLog.count

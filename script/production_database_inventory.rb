@@ -24,7 +24,6 @@ EXPECTED_PUBLIC_TABLES = %w[
   operator_oauth_states
   participant_answers
   participant_quiz_confidence_selections
-  participant_reactions
   participant_sessions
   participants
   que_jobs

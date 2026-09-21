@@ -18,7 +18,10 @@ RSpec.describe "Operator quiz control", type: :request do
   before do
     Operator::DeviceSession.delete_all
     Operator::Identity.delete_all
+    ReactionEventStore.clear!
   end
+
+  after { ReactionEventStore.clear! }
 
   let(:operator_headers) do
     { "Origin" => "https://event.example" }
@@ -47,9 +50,8 @@ RSpec.describe "Operator quiz control", type: :request do
   end
 
   describe "GET /api/operator/quiz/reactions" do
-    def create_reaction(participant, emoji, at)
-      session = ParticipantSession.create!(participant:, token_hash: Digest::SHA256.digest(SecureRandom.hex), expires_at: 1.day.from_now)
-      ParticipantReaction.create!(participant:, participant_session: session, reaction: emoji, reacted_at: at)
+    def create_reaction(emoji, at)
+      ReactionEventStore.record(session_id: SecureRandom.uuid, reaction: emoji, at:)
     end
 
     it "requires an operator session" do
@@ -59,15 +61,14 @@ RSpec.describe "Operator quiz control", type: :request do
 
     it "returns only a cursor on the first call and then new reactions after it" do
       authenticate_operator(manager_enabled: true)
-      participant = create_participant
-      create_reaction(participant, "👏", 5.seconds.ago)
+      create_reaction("👏", 5.seconds.ago)
 
       get "/api/operator/quiz/reactions"
       body = response.parsed_body
       expect(body["reactions"]).to eq([])
       cursor = body["cursor"]
 
-      create_reaction(participant, "🎉", 1.second.from_now)
+      create_reaction("🎉", Time.current)
       get "/api/operator/quiz/reactions", params: { since: cursor }
       body = response.parsed_body
       expect(body["reactions"].map { |r| r["reaction"] }).to eq([ "🎉" ])
@@ -79,7 +80,7 @@ RSpec.describe "Operator quiz control", type: :request do
 
     it "ignores reactions older than the lookback window and malformed cursors" do
       authenticate_operator(manager_enabled: true)
-      create_reaction(create_participant, "👍", 2.minutes.ago)
+      create_reaction("👍", 2.minutes.ago)
 
       get "/api/operator/quiz/reactions", params: { since: 10.minutes.ago.iso8601(6) }
       expect(response.parsed_body["reactions"]).to eq([])

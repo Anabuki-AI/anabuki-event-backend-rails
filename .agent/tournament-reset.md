@@ -37,13 +37,13 @@ A rejected confirmation performs no participant purge, quiz-state/reveal reset, 
 One PostgreSQL transaction:
 
 1. locks the singleton quiz session;
-2. takes exclusive locks on participant-owned tables in the canonical live-write order: `participants`, `participant_sessions`, `participant_reactions`, `participant_quiz_confidence_selections`, then `participant_answers`;
-3. deletes all `participant_reactions`, `participant_answers`, `participant_quiz_confidence_selections`, `participant_sessions`, and `participants` rows;
+2. takes exclusive locks on `participants`, `participant_sessions`, `participant_quiz_confidence_selections`, and `participant_answers`;
+3. deletes all `participant_answers`, `participant_quiz_confidence_selections`, `participant_sessions`, and `participants` rows;
 4. clears every `questions.revealed_at` value;
 5. resets the singleton `quiz_sessions` row to the initial waiting state, with current question, phase/timestamps, and finished elapsed time cleared; and
 6. inserts the durable `TOURNAMENT_RESET` audit row.
 
-Registration uses `participants` → `participant_sessions`; reactions explicitly lock their participant before their session and then insert into `participant_reactions`. Keeping reset in the same order prevents reset/registration and reset/reaction lock cycles. Participant writes that begin while reset owns the table locks resume only after commit and belong to the newly reset tournament.
+After the transaction commits, the process-local reaction event store is cleared. Reactions contain no durable participant data and are not part of the transaction. Registration writes that begin while reset owns the table locks resume only after commit and belong to the newly reset tournament.
 
 If any step, including the audit insert, fails, every destructive change rolls back.
 
@@ -73,7 +73,6 @@ The reset transaction captures the reset quiz state after all destructive update
     "started_at": "2026-09-30T09:00:00.000000Z",
     "completed_at": "2026-09-30T09:00:00.025000Z",
     "affected_rows": {
-      "participant_reactions": 45,
       "participant_answers": 300,
       "confidence_selections": 300,
       "participant_sessions": 50,
@@ -100,7 +99,6 @@ The reset appends one `audit_logs` row in the reset transaction:
 - `detail`: scalar, non-PII counts only:
   - `participantsDeleted`
   - `participantSessionsDeleted`
-  - `participantReactionsDeleted`
   - `participantAnswersDeleted`
   - `confidenceSelectionsDeleted`
   - `questionRevealsReset`

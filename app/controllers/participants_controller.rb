@@ -49,11 +49,13 @@ class ParticipantsController < ApplicationController
     require_participant_same_origin!
 
     session = participant_auth.current_session!
-    event = session.record_reaction(reaction: params.require(:reaction))
+    event = ReactionEventStore.record(session_id: session.id, reaction: params.require(:reaction))
 
     return render_error("Reaction rate limit exceeded", :too_many_requests) unless event
 
     head :created
+  rescue ReactionEventStore::InvalidReaction
+    render_error("Reaction is not included in the list", :unprocessable_content)
   rescue ActionController::ParameterMissing
     render_error("reaction is required", :bad_request)
   rescue ActionDispatch::Http::Parameters::ParseError

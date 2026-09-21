@@ -20,30 +20,6 @@ RSpec.describe ParticipantSession do
     end
   end
 
-  describe "#record_reaction" do
-    let(:participant) { create_participant }
-    let(:participant_session) { create_participant_session(participant, heartbeat_at: nil, expires_at: 1.day.from_now) }
-
-    it "serializes a session's cooldown while allowing a separate session to react" do
-      expect(participant_session).to receive(:lock!).twice.and_call_original
-
-      first_event = nil
-      expect {
-        first_event = participant_session.record_reaction(reaction: "👏")
-      }.to change(ParticipantReaction, :count).by(1)
-      expect(first_event).to have_attributes(participant:, participant_session:, reaction: "👏")
-      expect(participant_session.reload.last_reaction_at).to eq(first_event.reacted_at)
-
-      limited_event = nil
-      expect {
-        limited_event = participant_session.record_reaction(reaction: "🎉")
-      }.not_to change(ParticipantReaction, :count)
-      expect(limited_event).to be_nil
-
-      other_session = create_participant_session(participant, heartbeat_at: nil, expires_at: 1.day.from_now)
-      expect(other_session.record_reaction(reaction: "🎉")).to be_a(ParticipantReaction)
-    end
-  end
 
   private
 

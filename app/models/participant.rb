@@ -1,6 +1,5 @@
 class Participant < ApplicationRecord
   has_many :participant_sessions, dependent: :destroy
-  has_many :participant_reactions, dependent: :destroy
 
   validates :display_name, presence: true, length: { maximum: 100 }
   validates :gender, :age_group, presence: true, length: { maximum: 50 }

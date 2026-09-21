@@ -55,51 +55,6 @@ RSpec.describe "Tournament reset participant-write locking" do
     reset_thread&.kill if reset_thread&.alive?
   end
 
-  it "completes alongside a reaction using participants -> sessions -> reactions lock order" do
-    participant = Participant.create!(participant_attributes("Reacting player"))
-    session = ParticipantSession.create!(
-      participant:,
-      token_hash: Digest::SHA256.digest(SecureRandom.urlsafe_base64(32, false)),
-      expires_at: 1.hour.from_now
-    )
-    participant_locked = Queue.new
-    finish_reaction = Queue.new
-    reaction_result = Queue.new
-
-    allow_any_instance_of(Participant).to receive(:lock!).and_wrap_original do |method, *arguments|
-      value = method.call(*arguments)
-      participant_locked << true
-      finish_reaction.pop
-      value
-    end
-
-    reaction_thread = Thread.new do
-      ApplicationRecord.connection_pool.with_connection do
-        ParticipantSession.includes(:participant).find(session.id).record_reaction(reaction: "👍")
-      end
-      reaction_result << nil
-    rescue StandardError => error
-      reaction_result << error
-    end
-
-    Timeout.timeout(5) { participant_locked.pop }
-    reset_thread, reset_pid, reset_result = start_reset_thread
-    wait_until_lock_wait(reset_pid)
-    finish_reaction << true
-
-    expect(thread_result(reaction_thread, reaction_result)).to be_nil
-    result = thread_result(reset_thread, reset_result)
-    expect(result).to be_a(TournamentReset::Result)
-    expect(result.affected_rows.fetch(:participant_reactions)).to eq(1)
-    expect(Participant.count).to eq(0)
-    expect(ParticipantSession.count).to eq(0)
-    expect(ParticipantReaction.count).to eq(0)
-  ensure
-    finish_reaction << true if finish_reaction&.empty?
-    reaction_thread&.kill if reaction_thread&.alive?
-    reset_thread&.kill if reset_thread&.alive?
-  end
-
   private
 
   def start_reset_thread
@@ -151,7 +106,7 @@ RSpec.describe "Tournament reset participant-write locking" do
   end
 
   def clear_reset_data
-    ParticipantReaction.delete_all
+    ReactionEventStore.clear!
     ParticipantAnswer.delete_all
     ParticipantQuizConfidenceSelection.delete_all
     ParticipantSession.delete_all

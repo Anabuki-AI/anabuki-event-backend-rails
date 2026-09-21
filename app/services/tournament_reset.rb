@@ -60,19 +60,18 @@ class TournamentReset
         )
       end
 
+      ReactionEventStore.clear!
       result
     end
 
     private
 
     # ACCESS EXCLUSIVE prevents a registration or participant write that began
-    # during the reset from escaping the purge. Acquire tables in the same order
-    # as live writes: registration locks participants -> participant_sessions,
-    # reactions lock participants -> participant_sessions -> reactions, and
-    # answer submission reads confidence selections before inserting an answer.
+    # during the reset from escaping the purge. Answer submission reads
+    # confidence selections before inserting an answer.
     def lock_participant_tables!
       ApplicationRecord.connection.execute(<<~SQL.squish)
-        LOCK TABLE participants, participant_sessions, participant_reactions,
+        LOCK TABLE participants, participant_sessions,
           participant_quiz_confidence_selections, participant_answers
           IN ACCESS EXCLUSIVE MODE
       SQL
@@ -80,7 +79,6 @@ class TournamentReset
 
     def purge_participant_data!
       {
-        participant_reactions: ParticipantReaction.delete_all,
         participant_answers: ParticipantAnswer.delete_all,
         confidence_selections: ParticipantQuizConfidenceSelection.delete_all,
         participant_sessions: ParticipantSession.delete_all,
@@ -113,7 +111,6 @@ class TournamentReset
       {
         "participantsDeleted" => affected_rows.fetch(:participants),
         "participantSessionsDeleted" => affected_rows.fetch(:participant_sessions),
-        "participantReactionsDeleted" => affected_rows.fetch(:participant_reactions),
         "participantAnswersDeleted" => affected_rows.fetch(:participant_answers),
         "confidenceSelectionsDeleted" => affected_rows.fetch(:confidence_selections),
         "questionRevealsReset" => affected_rows.fetch(:question_reveals),

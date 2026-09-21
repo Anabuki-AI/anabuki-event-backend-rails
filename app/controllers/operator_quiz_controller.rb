@@ -22,10 +22,10 @@ class OperatorQuizController < ApplicationController
     return render json: { reactions: [], cursor: now.iso8601(6) } unless since
 
     since = [ since, now - REACTIONS_FEED_MAX_LOOKBACK ].max
-    events = ParticipantReaction.where("reacted_at > ?", since).order(:reacted_at, :id).limit(REACTIONS_FEED_LIMIT).to_a
-    cursor = events.last&.reacted_at || since
+    events = ReactionEventStore.events_since(since:, now:).first(REACTIONS_FEED_LIMIT)
+    cursor = events.last&.at || since
     render json: {
-      reactions: events.map { |event| { id: event.id, reaction: event.reaction, reacted_at: event.reacted_at.iso8601(6) } },
+      reactions: events.map { |event| { id: event.id, reaction: event.reaction, reacted_at: event.at.iso8601(6) } },
       cursor: cursor.iso8601(6)
     }
   end
