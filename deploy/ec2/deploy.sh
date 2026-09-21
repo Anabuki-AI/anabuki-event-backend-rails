@@ -44,7 +44,7 @@ rollback() {
   if (( status != 0 )) && [[ -n "$old_target" && -f "$old_target/deploy/ec2/docker-compose.production.yml" ]]; then
     echo "deployment failed; restoring previous release" >&2
     ln -sfn "$old_target" "$current_link"
-    docker compose --project-name anabuki-event --file "$old_target/deploy/ec2/docker-compose.production.yml" up -d --remove-orphans || true
+    RELEASE_SHA="$(basename "$old_target")" docker compose --project-name anabuki-event --file "$old_target/deploy/ec2/docker-compose.production.yml" up -d --no-deps api worker || true
   fi
   exit "$status"
 }
@@ -52,7 +52,13 @@ trap rollback EXIT
 
 "${compose[@]}" config --quiet
 "${compose[@]}" build --pull api
-"${compose[@]}" up -d --remove-orphans api worker cloudflared
+# SSH itself travels through cloudflared. Never converge a running connector
+# (including via dependency expansion or orphan removal) during app deployment.
+"${compose[@]}" up -d --no-deps api worker
+if [[ -z "$("${compose[@]}" ps --status running --quiet cloudflared)" ]]; then
+  # Bootstrap an absent connector, or start an existing stopped one unchanged.
+  "${compose[@]}" up -d --no-deps --no-recreate cloudflared
+fi
 "${compose[@]}" ps
 
 trap - EXIT
