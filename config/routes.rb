@@ -46,6 +46,7 @@ Rails.application.routes.draw do
     post "/operator/auth/logout", to: "operator_auth#logout"
 
     get "/operator/quiz/state", to: "operator_quiz#state"
+    get "/operator/quiz/reactions", to: "operator_quiz#reactions"
     post "/operator/quiz/start", to: "operator_quiz#start"
     post "/operator/quiz/publish", to: "operator_quiz#publish"
     post "/operator/quiz/correct-answer", to: "operator_quiz#update_correct_answer"

@@ -10,6 +10,26 @@ class OperatorQuizController < ApplicationController
     render json: quiz_state
   end
 
+  REACTIONS_FEED_LIMIT = 50
+  REACTIONS_FEED_MAX_LOOKBACK = 30.seconds
+
+  # Read-only feed for the projector screen's floating reactions. Poll with the
+  # returned cursor: the first call (no `since`) returns no history and only a
+  # cursor, so reactions sent before the screen opened are never replayed.
+  def reactions
+    now = Time.current
+    since = parse_reactions_cursor(params[:since])
+    return render json: { reactions: [], cursor: now.iso8601(6) } unless since
+
+    since = [ since, now - REACTIONS_FEED_MAX_LOOKBACK ].max
+    events = ParticipantReaction.where("reacted_at > ?", since).order(:reacted_at, :id).limit(REACTIONS_FEED_LIMIT).to_a
+    cursor = events.last&.reacted_at || since
+    render json: {
+      reactions: events.map { |event| { id: event.id, reaction: event.reaction, reacted_at: event.reacted_at.iso8601(6) } },
+      cursor: cursor.iso8601(6)
+    }
+  end
+
   def start
     QuizSession.current.start!
     render json: quiz_state
@@ -73,6 +93,14 @@ class OperatorQuizController < ApplicationController
   end
 
   private
+
+  def parse_reactions_cursor(value)
+    return nil if value.blank?
+
+    Time.iso8601(value.to_s)
+  rescue ArgumentError
+    nil
+  end
 
   # Single serializer shared by GET state and every POST transition, matching
   # the Phase 0 operator contract. correct_answer is operator-only and always
