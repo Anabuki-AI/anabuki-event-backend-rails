@@ -1,3 +1,9 @@
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   api:
     build:
@@ -10,11 +16,15 @@ services:
     environment:
       RAILS_ENV: production
       PORT: 3000
+      RAILS_LOG_LEVEL: ${RAILS_LOG_LEVEL:-debug}
+      RAILS_LOG_PATH: /app/log/production.log
     expose:
       - "3000"
     command: ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-p", "3000"]
     volumes:
       - rails-storage-data:/app/storage
+      - ${SHARED_LOG_ROOT:-/opt/anabuki-event/shared/log}/api:/app/log
+    logging: *bounded-logging
     healthcheck:
       test:
         - CMD
@@ -35,12 +45,18 @@ services:
       - ./.env.production
     environment:
       RAILS_ENV: production
+      RAILS_LOG_LEVEL: ${RAILS_LOG_LEVEL:-debug}
+      RAILS_LOG_PATH: /app/log/production.log
     volumes:
       - rails-storage-data:/app/storage
+      - ${SHARED_LOG_ROOT:-/opt/anabuki-event/shared/log}/worker:/app/log
+    logging: *bounded-logging
     command:
       - bundle
       - exec
       - que
+      - --log-level
+      - ${RAILS_LOG_LEVEL:-debug}
       - --worker-count
       - ${QUE_WORKER_COUNT:-3}
       - --queue-name
