@@ -27,6 +27,32 @@ The deployment user only needs Docker access and write access under
 account with sudo to install Docker and provision `anabuki-deploy`; subsequent
 release operations use the least-privileged deploy user.
 
+## Tunnel lifecycle is separate from application releases
+
+Activation and rollback run `up -d --no-deps api worker`, never a project-wide
+`up`, `down`, or `--remove-orphans`. cloudflared deliberately has no API
+`depends_on`: Compose can stop dependents before recreating API, disconnecting
+its own deploy SSH session. A running connector is left untouched even if the
+release changes its image or env file. If none is running, deployment uses
+`up -d --no-deps --no-recreate cloudflared` to create an absent connector or
+start an existing stopped one without replacing its configuration. Initial
+bootstrap still needs direct SSH/SSM because tunnel SSH cannot open beforehand.
+
+Connector image/token/config updates are **explicit maintenance**, not applied
+by app releases. Arrange direct EC2 SSH or SSM first; never run this over the
+connector being replaced. In an approved maintenance window, after reviewing
+the current Compose definition and private env file, run as the deploy user:
+
+```sh
+export RELEASE_SHA="$(basename "$(readlink -f /opt/anabuki-event/current)")"
+docker compose --project-name anabuki-event --file /opt/anabuki-event/current/deploy/ec2/docker-compose.production.yml pull cloudflared
+docker compose --project-name anabuki-event --file /opt/anabuki-event/current/deploy/ec2/docker-compose.production.yml up -d --no-deps --force-recreate cloudflared
+```
+
+Then verify connector registration, public `/health`, and a new tunnel SSH
+connection before closing the independent access session. Expect a brief tunnel
+interruption. This operation is not part of normal deploy/rollback automation.
+
 ## EC2-local production logs
 
 Compose enables `RAILS_LOG_LEVEL=debug` and `RAILS_LOG_PATH=/app/log/production.log`

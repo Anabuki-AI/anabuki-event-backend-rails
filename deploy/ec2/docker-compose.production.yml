@@ -81,9 +81,7 @@ services:
     env_file:
       - ./.cloudflared.env
     command: ["tunnel", "--no-autoupdate", "run"]
-    depends_on:
-      api:
-        condition: service_healthy
+    # Also carries deployment SSH: must survive API recreation/unavailability.
     restart: unless-stopped
 
 volumes:

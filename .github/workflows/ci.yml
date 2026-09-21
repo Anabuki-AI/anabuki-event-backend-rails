@@ -56,6 +56,10 @@ jobs:
           RAILS_ENV: test
           DATABASE_URL: postgresql://anabuki:anabuki@localhost:5432/anabuki_event_rails_test
         run: bundle exec rails db:prepare && bundle exec rspec
+      - name: Test deployment lifecycle without Docker
+        run: |
+          bash -n deploy/ec2/deploy.sh
+          python3 deploy/ec2/test_deploy.py
       - name: Validate production Compose definition
         run: |
           set -euo pipefail
