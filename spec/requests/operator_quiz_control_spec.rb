@@ -46,6 +46,50 @@ RSpec.describe "Operator quiz control", type: :request do
     end
   end
 
+  describe "GET /api/operator/quiz/reactions" do
+    def create_reaction(participant, emoji, at)
+      session = ParticipantSession.create!(participant:, token_hash: Digest::SHA256.digest(SecureRandom.hex), expires_at: 1.day.from_now)
+      ParticipantReaction.create!(participant:, participant_session: session, reaction: emoji, reacted_at: at)
+    end
+
+    it "requires an operator session" do
+      get "/api/operator/quiz/reactions"
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "returns only a cursor on the first call and then new reactions after it" do
+      authenticate_operator(manager_enabled: true)
+      participant = create_participant
+      create_reaction(participant, "👏", 5.seconds.ago)
+
+      get "/api/operator/quiz/reactions"
+      body = response.parsed_body
+      expect(body["reactions"]).to eq([])
+      cursor = body["cursor"]
+
+      create_reaction(participant, "🎉", 1.second.from_now)
+      get "/api/operator/quiz/reactions", params: { since: cursor }
+      body = response.parsed_body
+      expect(body["reactions"].map { |r| r["reaction"] }).to eq([ "🎉" ])
+      expect(body["reactions"].first.keys).to contain_exactly("id", "reaction", "reacted_at")
+
+      get "/api/operator/quiz/reactions", params: { since: body["cursor"] }
+      expect(response.parsed_body["reactions"]).to eq([])
+    end
+
+    it "ignores reactions older than the lookback window and malformed cursors" do
+      authenticate_operator(manager_enabled: true)
+      create_reaction(create_participant, "👍", 2.minutes.ago)
+
+      get "/api/operator/quiz/reactions", params: { since: 10.minutes.ago.iso8601(6) }
+      expect(response.parsed_body["reactions"]).to eq([])
+
+      get "/api/operator/quiz/reactions", params: { since: "garbage" }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["reactions"]).to eq([])
+    end
+  end
+
   describe "GET /api/operator/quiz/state" do
     it "returns the waiting state without a current question" do
       authenticate_operator(manager_enabled: true)
