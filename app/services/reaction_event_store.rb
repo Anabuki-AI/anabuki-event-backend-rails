@@ -14,6 +14,11 @@ class ReactionEventStore
     def record(session_id:, reaction:, at: Time.current)
       raise InvalidReaction unless REACTIONS.include?(reaction)
 
+      # The API cursor is serialized to microseconds, so retain the same
+      # precision internally. Otherwise a nanosecond remainder makes the last
+      # event compare greater than its own returned cursor and replay once.
+      at = at.floor(6)
+
       mutex.synchronize do
         prune!(at)
         return nil if rate_limited?(session_id, at)
