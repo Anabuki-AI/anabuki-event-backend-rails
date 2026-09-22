@@ -53,6 +53,8 @@ Rails は PostgreSQL の **単一DB** `anabuki_event_rails_*` と、別Docker vo
 
 参加者は `POST /api/participants` で表示名とアンケート回答を送信すると、UUID参加者とCookieセッションが作られます。`GET /api/participants/me` はCookieから現在の参加者を返し、`DELETE /api/participants/session` はセッションをrevokeしてCookieを削除します。待機画面の `POST /api/participants/reactions` はセッションごとに500msに1件だけイベントを保存し、連打はイベントを作成せず `429 Too Many Requests` を返します。クイズ回答は締切前なら同じ `POST /api/participant/quiz/answers` を再送して選択肢だけ更新できます。自信度とLv.1の除外選択肢は問題ごとに確定したままで、締切後の再送は `409 Conflict` です。完全なrequest/response契約は [`.agent/participant-api-contract.md`](.agent/participant-api-contract.md) を参照してください。
 
+`display_name` は `TYPESAFE_API_KEY` が設定されている場合、TypeSafe Jev モデルによる不適切名チェックを通った場合だけ保存されます。閾値やフェイル方針などの設計は [`.agent/display-name-moderation.md`](.agent/display-name-moderation.md) を参照してください。
+
 ## Background jobs (Que)
 
 Active Job は Redisを使わず、PostgreSQL-backed [Que](https://github.com/que-rb/que) adapterを使用します。`db/migrate/*create_que_schema.rb` が公式の `Que.migrate!(version: 7)` を適用し、workerはAPIとは別プロセスで起動します。RailsのDB migrationはComposeの `db-prepare` サービスだけが先に実行するため、APIとworkerの同時起動によるmigration競合を避けます。
