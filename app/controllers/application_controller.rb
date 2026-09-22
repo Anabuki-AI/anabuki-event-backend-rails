@@ -6,6 +6,7 @@ class ApplicationController < ActionController::API
     render_error("Not found", :not_found)
   end
   rescue_from ActiveRecord::RecordInvalid do |error|
+    error.record.record_rejected_moderation_audit if error.record.is_a?(Participant)
     render_error(error.record.errors.full_messages.to_sentence, :unprocessable_content)
   end
   rescue_from AdminAuthError do |error|

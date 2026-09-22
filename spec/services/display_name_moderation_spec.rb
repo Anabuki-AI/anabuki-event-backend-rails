@@ -121,4 +121,39 @@ RSpec.describe DisplayNameModeration do
       expect(moderation.inappropriate?("なんでも")).to be(false)
     end
   end
+
+  describe "#check" do
+    it "reports the evaluated probability, threshold, and rejection for a flagged name" do
+      allow(transport).to receive(:request)
+        .and_return(DisplayNameModerationTransport::Response.new(200, response_body(0.86)))
+
+      with_env(moderation_env) do
+        result = moderation.check("主催者_公式アカウント")
+        expect(result.probability).to eq(0.86)
+        expect(result.threshold).to eq(0.7)
+        expect(result.evaluation_failed).to be(false)
+        expect(result.rejected?).to be(true)
+      end
+    end
+
+    it "marks provider failures as evaluation_failed without rejecting when fail-open" do
+      allow(transport).to receive(:request).and_raise(DisplayNameModerationTransport::Error, "Net::ReadTimeout")
+
+      with_env(moderation_env) do
+        result = moderation.check("なんでも")
+        expect(result.evaluation_failed).to be(true)
+        expect(result.rejected?).to be(false)
+      end
+    end
+
+    it "marks provider failures as rejected when fail-closed" do
+      allow(transport).to receive(:request).and_raise(DisplayNameModerationTransport::Error, "SocketError")
+
+      with_env(moderation_env("DISPLAY_NAME_MODERATION_FAIL_CLOSED" => "true")) do
+        result = moderation.check("なんでも")
+        expect(result.evaluation_failed).to be(true)
+        expect(result.rejected?).to be(true)
+      end
+    end
+  end
 end
