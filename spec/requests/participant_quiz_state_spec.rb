@@ -72,6 +72,7 @@ RSpec.describe "Participant quiz state", type: :request do
         "question_id" => question.id,
         "position" => 1,
         "question_text" => "Question 1",
+        "target_audience" => nil,
         "choices" => { "A" => "choice A", "B" => "choice B", "C" => "choice C", "D" => "choice D" },
         "eliminated_choice" => nil,
         "is_live_relay_question" => false,
@@ -85,6 +86,17 @@ RSpec.describe "Participant quiz state", type: :request do
       "confidence_locked" => false,
       "confidence_multipliers" => { "high" => 2.0, "normal" => 1.0, "low" => 0.5 }
     )
+  end
+
+  it "exposes the target audience alongside the question text" do
+    sign_in
+    question.update!(target_audience: "1年生チーム")
+    QuizSession.current.start!
+
+    get "/api/participant/quiz/state"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("question", "target_audience")).to eq("1年生チーム")
   end
 
   it "marks a selected relay question as live for participants" do
@@ -224,7 +236,7 @@ RSpec.describe "Participant quiz state", type: :request do
 
   private
 
-  def create_question(position:, correct_answer:)
+  def create_question(position:, correct_answer:, target_audience: nil)
     Question.create!(
       position:,
       question_text: "Question #{position}",
@@ -232,7 +244,8 @@ RSpec.describe "Participant quiz state", type: :request do
       choice_b: "choice B",
       choice_c: "choice C",
       choice_d: "choice D",
-      correct_answer:
+      correct_answer:,
+      target_audience:
     )
   end
 end
