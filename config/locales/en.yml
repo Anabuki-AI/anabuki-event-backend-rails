@@ -39,3 +39,4 @@ en:
           attributes:
             display_name:
               inappropriate: "は使用できない可能性があります。別の表示名を入力してください"
+              taken: "はすでに使われています。別の表示名を入力してください"

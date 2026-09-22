@@ -25,7 +25,7 @@ RSpec.describe ParticipantSession do
 
   def create_participant
     Participant.create!(
-      display_name: "Quiz Player",
+      display_name: "Quiz Player #{SecureRandom.hex(4)}",
       gender: "no_answer",
       age_group: "20s",
       student_type: "not_student",

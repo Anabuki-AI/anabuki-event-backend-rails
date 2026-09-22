@@ -62,15 +62,27 @@ RSpec.describe "Participant registration", type: :request do
     expect(response.parsed_body).to eq("error" => "Participant session already exists")
   end
 
-  it "allows duplicate display names in separate participant sessions" do
-    2.times do
-      post "/api/participants", params: registration, as: :json
-      expect(response).to have_http_status(:created)
-      delete "/api/participants/session"
-      expect(response).to have_http_status(:no_content)
-    end
+  it "rejects a display name already used by another participant" do
+    post "/api/participants", params: registration, as: :json
+    expect(response).to have_http_status(:created)
+    delete "/api/participants/session"
+    expect(response).to have_http_status(:no_content)
 
-    expect(Participant.where(display_name: registration[:displayName]).count).to eq(2)
+    post "/api/participants", params: registration, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("表示名")
+
+    expect(Participant.where(display_name: registration[:displayName]).count).to eq(1)
+  end
+
+  it "rejects a display name that differs only by letter case" do
+    post "/api/participants", params: registration, as: :json
+    expect(response).to have_http_status(:created)
+    delete "/api/participants/session"
+    expect(response).to have_http_status(:no_content)
+
+    post "/api/participants", params: registration.merge(displayName: "quiz player"), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
   end
 
   it "returns the participant resolved from the cookie session" do
