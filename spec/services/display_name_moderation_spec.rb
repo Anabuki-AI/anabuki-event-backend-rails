@@ -9,9 +9,9 @@ RSpec.describe DisplayNameModeration do
   # nil means "leave unset" so that the config falls back to its defaults.
   def moderation_env(overrides = {})
     {
-      "TYPESAFE_API_KEY" => "test-key",
-      "TYPESAFE_API_URL" => nil,
-      "TYPESAFE_MODEL" => nil,
+      "OPENROUTER_API_KEY" => "test-key",
+      "OPENROUTER_API_URL" => nil,
+      "OPENROUTER_MODEL" => nil,
       "DISPLAY_NAME_MODERATION_THRESHOLD" => nil,
       "DISPLAY_NAME_MODERATION_FAIL_CLOSED" => nil
     }.merge(overrides)
@@ -29,7 +29,7 @@ RSpec.describe DisplayNameModeration do
   it "skips evaluation entirely when no API key is configured" do
     allow(transport).to receive(:request)
 
-    with_env(moderation_env("TYPESAFE_API_KEY" => nil)) do
+    with_env(moderation_env("OPENROUTER_API_KEY" => nil)) do
       expect(moderation.inappropriate?("主催者_公式アカウント")).to be(false)
       expect(transport).not_to have_received(:request)
     end
@@ -47,7 +47,8 @@ RSpec.describe DisplayNameModeration do
     end
 
     expect(captured[:method]).to eq(:post)
-    expect(captured[:url]).to eq("https://api.typesafe.ai/v1/systemone")
+    expect(captured[:url]).to eq("https://openrouter.ai/api/alpha/decisions")
+    expect(captured[:json]["model"]).to eq("~typesafe/jev-latest")
     expect(captured[:headers]["Authorization"]).to eq("Bearer test-key")
     expect(captured[:json]["state"]).to include("主催者_公式アカウント")
     question = captured[:json]["questions"].fetch("inappropriate_display_name")

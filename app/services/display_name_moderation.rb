@@ -1,13 +1,13 @@
 require "json"
 
-# Evaluates participant display names with the TypeSafe Jev model so
-# inappropriate names (obscenity, slurs, impersonation, personal data, spam)
-# are rejected before they appear on rankings and venue screens. Only the
-# candidate name and the rubric are sent upstream; no other participant data
-# leaves the server. Moderation is skipped when TYPESAFE_API_KEY is not
-# configured, and provider failures are fail-open unless
-# DISPLAY_NAME_MODERATION_FAIL_CLOSED is set, so an outage cannot take
-# registration down with it.
+# Evaluates participant display names with the TypeSafe Jev model via the
+# OpenRouter Decisions API so inappropriate names (obscenity, slurs,
+# impersonation, personal data, spam) are rejected before they appear on
+# rankings and venue screens. Only the candidate name and the rubric are
+# sent upstream; no other participant data leaves the server. Moderation
+# is skipped when OPENROUTER_API_KEY is not configured, and provider
+# failures are fail-open unless DISPLAY_NAME_MODERATION_FAIL_CLOSED is
+# set, so an outage cannot take registration down with it.
 class DisplayNameModeration
   QUESTION_KEY = "inappropriate_display_name"
 

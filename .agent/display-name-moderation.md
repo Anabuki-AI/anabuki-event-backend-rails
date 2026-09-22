@@ -1,6 +1,6 @@
-# Display name moderation (TypeSafe Jev)
+# Display name moderation (TypeSafe Jev via OpenRouter)
 
-参加者の `display_name` を TypeSafe の評価モデル Jev で事前審査し、不適切な名前を登録・改名の段階で拒否する。
+参加者の `display_name` を TypeSafe の評価モデル Jev で事前審査し、不適切な名前を登録・改名の段階で拒否する。Jev の呼び出しは OpenRouter Decisions API (`POST https://openrouter.ai/api/alpha/decisions`) 経由。
 
 ## 構成
 
@@ -19,9 +19,9 @@
 
 | 変数 | 既定 | 意味 |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | なし（必須） | TypeSafe API の Bearer キー。未設定なら審査自体をスキップ（ローカル開発は無効） |
-| `TYPESAFE_API_URL` | `https://api.typesafe.ai/v1/systemone` | 評価エンドポイント（HTTPS のみ許可） |
-| `TYPESAFE_MODEL` | `jev-latest` | モデル指定（`jev-1.13.0` 等に固定も可） |
+| `OPENROUTER_API_KEY` | なし（必須） | OpenRouter の Bearer キー（`sk-or-...`）。未設定なら審査自体をスキップ（ローカル開発は無効） |
+| `OPENROUTER_API_URL` | `https://openrouter.ai/api/alpha/decisions` | 評価エンドポイント（HTTPS のみ許可） |
+| `OPENROUTER_MODEL` | `~typesafe/jev-latest` | モデル指定（`typesafe/jev-1.13` 等に固定も可） |
 | `DISPLAY_NAME_MODERATION_THRESHOLD` | `0.7` | この確率以上で拒否（0..1） |
 | `DISPLAY_NAME_MODERATION_FAIL_CLOSED` | 空=fail-open | `true` で API 障害時も拒否。既定はフェイルオープン＋警告ログ |
 
@@ -33,7 +33,9 @@
 - 応答は 70〜500ms 程度。transport の timeout は open/read/write 各3秒
 - `noul` は確率のみ返し理由テキストは返らない。カテゴリ別の理由が必要になったら `choice` 質問への差替で対応できる
 
-## 実測メモ（2026-09-22, `jev-1.13.0`）
+注意: OpenRouter 側のキーは TypeSafe 直 API のキーとは別物。TypeSafe の `apikey_...` キーを OpenRouter に送ると 401 になるため、OpenRouter ダッシュボードで発行したキーが必要。
+
+## 実測メモ（2026-09-22, `jev-1.13.0`、TypeSafe 直 API）
 
 - `主催者_公式アカウント` → 0.86（なりすまし検出）
 - `たろう` → 0.03（通常名）
