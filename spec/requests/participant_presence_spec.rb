@@ -80,7 +80,7 @@ RSpec.describe "Participant waiting presence", type: :request do
 
   def create_participant
     Participant.create!(
-      display_name: "Another Player",
+      display_name: "Another Player #{SecureRandom.hex(4)}",
       gender: "no_answer",
       age_group: "20s",
       student_type: "not_student",

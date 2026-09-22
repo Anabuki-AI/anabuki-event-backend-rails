@@ -1,7 +1,7 @@
 class Participant < ApplicationRecord
   has_many :participant_sessions, dependent: :destroy
 
-  validates :display_name, presence: true, length: { maximum: 100 }
+  validates :display_name, presence: true, length: { maximum: 100 }, uniqueness: { case_sensitive: false }
   validate :display_name_must_be_appropriate, if: :display_name_moderation_required?
   validates :gender, :age_group, presence: true, length: { maximum: 50 }
   validates :student_type, length: { maximum: 50 }

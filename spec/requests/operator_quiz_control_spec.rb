@@ -743,7 +743,7 @@ RSpec.describe "Operator quiz control", type: :request do
 
   def create_participant
     Participant.create!(
-      display_name: "Player",
+      display_name: "Player #{SecureRandom.hex(4)}",
       gender: "no_answer",
       age_group: "20s",
       student_type: "not_student",
