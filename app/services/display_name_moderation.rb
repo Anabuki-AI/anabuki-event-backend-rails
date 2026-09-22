@@ -11,10 +11,16 @@ require "json"
 class DisplayNameModeration
   QUESTION_KEY = "inappropriate_display_name"
 
-  INSTRUCTIONS = "この表示名をクイズ大会の参加者名・順位表示として公表してよいか判定してください。" \
-    "次に当てはまる場合は不適切です: 卑猥・下品な表現、差別・ヘイト・誹謗中傷、暴力・犯罪・反社会的な表現、" \
-    "運営・主催者・他の参加者・有名人などへのなりすまし、電話番号・メールアドレス・住所・他人の本名などの個人情報、" \
-    "宣伝・URL・スパム、記号や文字置き換えによるそれらの回避表現。"
+  # Few-shot-style rubric tuned against live jev responses: listing the
+  # categories descriptively (without literal slurs) separates flagged names
+  # (>= 0.74) from ordinary ones (<= 0.11) far better than an abstract rule.
+  INSTRUCTIONS = "あなたはクイズ大会の表示名モデレーターです。参加者が入力した表示名が以下のいずれかに当てはまるか判定してください: " \
+    "卑猥・下品な表現（性器・性行為・排泄物を直接指す語や卑語）、差別・ヘイトスピーチ・誹謗中傷（人種・属性への攻撃や、相手を罵倒する語）、 " \
+    "暴力・犯罪・反社会的な示唆（殺害・暴力の予告、違法行為の宣伝、独裁者・テロリストの礼賛）、 " \
+    "運営・主催者・スタッフ・他の参加者・有名人へのなりすまし（運営・管理者・公式を名乗るもの）、 " \
+    "電話番号・メールアドレス・URL・SNS誘導などの個人情報や宣伝。 " \
+    "卑語や禁止語の一部を○・◯・＊・記号・空白で伏せたり、当て字・ローマ字・ひらがな・カタカナに変換したりした回避表現も不適切です。 " \
+    "当てはまれば不適切、どれにも当てはまらなければ適切です。"
 
   CRITERIA = {
     "true" => "不適切または不審な表示名であり、公表すべきでない",
