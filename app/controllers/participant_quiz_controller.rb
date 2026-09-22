@@ -138,6 +138,7 @@ class ParticipantQuizController < ApplicationController
       question_id: question.id,
       position: question.position,
       question_text: question.question_text,
+      target_audience: question.target_audience,
       choices: {
         "A" => question.choice_a,
         "B" => question.choice_b,
