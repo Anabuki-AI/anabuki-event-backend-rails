@@ -46,6 +46,7 @@ class Question < ApplicationRecord
   # not re-lock this one. This is enforced here so the guard also applies to
   # direct API calls, not just the admin UI.
   validate :correct_answer_locked_for_unselected_relay_question, on: :update
+  validate :live_relay_question_cannot_be_unselected, on: :update
 
   before_validation :normalize_text_attributes
   before_validation :reset_correct_answer_when_converted_to_relay
@@ -199,6 +200,17 @@ class Question < ApplicationRecord
       end
       yield
     end
+  end
+
+  # Unselecting the relay question that is on screen right now would block the
+  # live correct-answer update the operator performs during that question.
+  def live_relay_question_cannot_be_unselected
+    return unless is_selected_relay_question_in_database && !is_selected_relay_question?
+
+    session = QuizSession.current
+    return unless session.status == "in_progress" && session.current_question_id == id
+
+    errors.add(:is_selected_relay_question, "cannot be unselected while this question is live")
   end
 
   def correct_answer_locked_for_unselected_relay_question
