@@ -140,6 +140,7 @@ class OperatorQuizController < ApplicationController
       live_correct_answer_confirmed: question.live_correct_answer_confirmed_at.present?,
       correct_answer: question.correct_answer,
       explanation: question.explanation,
+      target_audience: question.target_audience,
       time_limit_seconds: question.time_limit_seconds,
       answered_count:,
       answered_rate: answered_rate(answered_count, total_participants)
@@ -164,7 +165,8 @@ class OperatorQuizController < ApplicationController
         "C" => next_question.choice_c,
         "D" => next_question.choice_d
       },
-      image_url: question_image_url(next_question)
+      image_url: question_image_url(next_question),
+      target_audience: next_question.target_audience
     }
   end
 

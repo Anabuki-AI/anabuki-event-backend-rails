@@ -142,6 +142,7 @@ RSpec.describe "Operator quiz control", type: :request do
         "live_correct_answer_confirmed" => false,
         "correct_answer" => "B",
         "explanation" => nil,
+        "target_audience" => nil,
         "time_limit_seconds" => 30,
         "answered_count" => 0,
         "answered_rate" => 0.0
@@ -174,7 +175,8 @@ RSpec.describe "Operator quiz control", type: :request do
         "position" => 2,
         "question_text" => "Question 2",
         "choices" => { "A" => "choice A", "B" => "choice B", "C" => "choice C", "D" => "choice D" },
-        "image_url" => nil
+        "image_url" => nil,
+        "target_audience" => nil
       )
     end
 
