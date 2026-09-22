@@ -17,11 +17,12 @@ RSpec.describe DisplayNameModeration do
     }.merge(overrides)
   end
 
-  def response_body(probability)
+  def response_body(probability, en_probability: probability)
     JSON.generate(
-      "model" => "jev-1.13.0",
+      "model" => "typesafe/jev-1.13-20260917",
       "answers" => {
-        "inappropriate_display_name" => { "type" => "noul", "noul" => probability }
+        "inappropriate_display_name_ja" => { "type" => "noul", "noul" => probability },
+        "inappropriate_display_name_en" => { "type" => "noul", "noul" => en_probability }
       }
     )
   end
@@ -51,9 +52,20 @@ RSpec.describe DisplayNameModeration do
     expect(captured[:json]["model"]).to eq("~typesafe/jev-latest")
     expect(captured[:headers]["Authorization"]).to eq("Bearer test-key")
     expect(captured[:json]["state"]).to include("主催者_公式アカウント")
-    question = captured[:json]["questions"].fetch("inappropriate_display_name")
+    questions = captured[:json]["questions"]
+    question = questions.fetch("inappropriate_display_name_ja")
     expect(question["type"]).to eq("noul")
     expect(question["instructions"]).to include("なりすまし")
+    expect(questions.fetch("inappropriate_display_name_en")["instructions"]).to include("display-name moderator")
+  end
+
+  it "uses the higher of the Japanese and English probabilities" do
+    allow(transport).to receive(:request)
+      .and_return(DisplayNameModerationTransport::Response.new(200, response_body(0.5, en_probability: 0.8)))
+
+    with_env(moderation_env) do
+      expect(moderation.inappropriate?("kanri")).to be(true)
+    end
   end
 
   it "permits ordinary names below the threshold" do
