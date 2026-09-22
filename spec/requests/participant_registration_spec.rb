@@ -99,6 +99,29 @@ RSpec.describe "Participant registration", type: :request do
     )
   end
 
+  it "rejects a display name that moderation flags as inappropriate" do
+    moderation = instance_double(DisplayNameModeration, inappropriate?: true)
+    allow(DisplayNameModeration).to receive(:new).and_return(moderation)
+
+    expect {
+      post "/api/participants", params: registration.merge(displayName: "NG Name"), as: :json
+    }.not_to change(Participant, :count)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("表示名")
+  end
+
+  it "rejects renaming to a display name that moderation flags as inappropriate" do
+    post "/api/participants", params: registration, as: :json
+    moderation = instance_double(DisplayNameModeration, inappropriate?: true)
+    allow(DisplayNameModeration).to receive(:new).and_return(moderation)
+
+    patch "/api/participants/me", params: { displayName: "NG Name" }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(Participant.sole.display_name).to eq("Quiz Player")
+  end
+
   it "rejects a missing, expired, or revoked participant session" do
     get "/api/participants/me"
     expect(response).to have_http_status(:unauthorized)

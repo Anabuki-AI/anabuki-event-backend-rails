@@ -29,3 +29,13 @@
 
 en:
   hello: "Hello world"
+  activerecord:
+    attributes:
+      participant:
+        display_name: "表示名"
+    errors:
+      models:
+        participant:
+          attributes:
+            display_name:
+              inappropriate: "は使用できない可能性があります。別の表示名を入力してください"
