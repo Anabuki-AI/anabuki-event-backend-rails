@@ -112,20 +112,42 @@ RSpec.describe "Participant registration", type: :request do
   end
 
   it "rejects a display name that moderation flags as inappropriate" do
-    moderation = instance_double(DisplayNameModeration, inappropriate?: true)
+    result = DisplayNameModeration::Result.new(probability: 0.9, threshold: 0.7, evaluation_failed: false, rejected: true)
+    moderation = instance_double(DisplayNameModeration, check: result)
     allow(DisplayNameModeration).to receive(:new).and_return(moderation)
 
     expect {
       post "/api/participants", params: registration.merge(displayName: "NG Name"), as: :json
-    }.not_to change(Participant, :count)
+    }.to change(Participant, :count).by(0)
+      .and change(AuditLog, :count).by(1)
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body.fetch("error")).to include("表示名")
+
+    log = AuditLog.sole
+    expect(log.event_type).to eq("DISPLAY_NAME_REJECTED")
+    expect(log.detail).to eq("displayName" => "NG Name", "probability" => 0.9, "threshold" => 0.7)
+  end
+
+  it "records a moderation audit entry when the provider cannot be reached" do
+    result = DisplayNameModeration::Result.new(probability: nil, threshold: 0.7, evaluation_failed: true, rejected: false)
+    moderation = instance_double(DisplayNameModeration, check: result)
+    allow(DisplayNameModeration).to receive(:new).and_return(moderation)
+
+    expect {
+      post "/api/participants", params: registration.merge(displayName: "New Player"), as: :json
+    }.to change(Participant, :count).by(1)
+      .and change(AuditLog, :count).by(1)
+
+    log = AuditLog.sole
+    expect(log.event_type).to eq("DISPLAY_NAME_MODERATION_FAILED")
+    expect(log.detail).to eq("displayName" => "New Player", "failClosed" => false)
   end
 
   it "rejects renaming to a display name that moderation flags as inappropriate" do
     post "/api/participants", params: registration, as: :json
-    moderation = instance_double(DisplayNameModeration, inappropriate?: true)
+    result = DisplayNameModeration::Result.new(probability: 0.9, threshold: 0.7, evaluation_failed: false, rejected: true)
+    moderation = instance_double(DisplayNameModeration, check: result)
     allow(DisplayNameModeration).to receive(:new).and_return(moderation)
 
     patch "/api/participants/me", params: { displayName: "NG Name" }, as: :json

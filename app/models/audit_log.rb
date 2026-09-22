@@ -16,6 +16,9 @@ class AuditLog < ApplicationRecord
     OPERATOR_ACCESS_GRANTED
     OPERATOR_ACCESS_REVOKED
     TOURNAMENT_RESET
+    PARTICIPANT_DELETED
+    DISPLAY_NAME_REJECTED
+    DISPLAY_NAME_MODERATION_FAILED
   ].freeze
 
   belongs_to :admin_identity, optional: true

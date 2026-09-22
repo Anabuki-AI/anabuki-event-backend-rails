@@ -48,21 +48,40 @@ class DisplayNameModeration
     def inappropriate?(threshold) = probability >= threshold
   end
 
+  # The outcome of one moderation check, richer than the boolean the
+  # validation needs: the audit log wants the probability for rejected names
+  # and a distinct marker for provider failures (fail-open skips review
+  # silently, fail-closed turns them into rejections).
+  Result = Data.define(:probability, :threshold, :evaluation_failed, :rejected) do
+    def rejected? = rejected
+    def evaluated? = !evaluation_failed && !probability.nil?
+  end
+
   def initialize(config: DisplayNameModerationConfig.new, transport: DisplayNameModerationTransport.new, logger: Rails.logger)
     @config = config
     @transport = transport
     @logger = logger
   end
 
+  # Runs the moderation check once and reports what happened.
+  def check(display_name)
+    return Result.new(probability: nil, threshold: config.threshold, evaluation_failed: false, rejected: false) unless config.enabled?
+
+    verdict = evaluate(display_name)
+    return Result.new(probability: nil, threshold: config.threshold, evaluation_failed: true, rejected: config.fail_closed?) if verdict.nil?
+
+    Result.new(
+      probability: verdict.probability,
+      threshold: config.threshold,
+      evaluation_failed: false,
+      rejected: verdict.inappropriate?(config.threshold)
+    )
+  end
+
   # True when the name must be rejected. Provider failures never raise; they
   # resolve to the configured open/closed policy instead.
   def inappropriate?(display_name)
-    return false unless config.enabled?
-
-    verdict = evaluate(display_name)
-    return config.fail_closed? if verdict.nil?
-
-    verdict.inappropriate?(config.threshold)
+    check(display_name).rejected?
   end
 
   private
