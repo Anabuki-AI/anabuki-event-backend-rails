@@ -42,6 +42,7 @@ class QuizSession < ApplicationRecord
         phase_started_at: started_at, answering_started_at: started_at,
         finished_elapsed_seconds: nil
       )
+      select_live_relay_question!(question)
     end
   end
 
@@ -60,6 +61,7 @@ class QuizSession < ApplicationRecord
 
       started_at = Time.current
       update!(current_question: question, phase: "answering", phase_started_at: started_at, answering_started_at: started_at)
+      select_live_relay_question!(question)
     end
   end
 
@@ -350,6 +352,15 @@ class QuizSession < ApplicationRecord
 
   def live_relay_question?(question)
     question&.is_relay_question? && question.is_selected_relay_question?
+  end
+
+  # The "this round's" relay flag follows whatever is actually on screen:
+  # going live selects it (and Question unselects every other relay question),
+  # so the operator never has to pick it in advance.
+  def select_live_relay_question!(question)
+    return unless question&.is_relay_question? && !question.is_selected_relay_question?
+
+    question.update!(is_selected_relay_question: true)
   end
 
   def require_status!(expected, message)

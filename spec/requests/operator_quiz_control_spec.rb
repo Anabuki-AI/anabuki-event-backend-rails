@@ -247,15 +247,31 @@ RSpec.describe "Operator quiz control", type: :request do
       expect(question.reload.correct_answer).to eq("A")
     end
 
-    it "rejects a relay question that has not been selected via the management screen" do
+    it "auto-selects a relay question when it goes live so its answer can be updated" do
       authenticate_operator(manager_enabled: true)
-      question = create_question(position: 1, is_relay_question: true)
+      question = create_question(position: 1, correct_answer: "A", is_relay_question: true)
+
       QuizSession.current.start!
+      expect(question.reload.is_selected_relay_question).to be(true)
 
       post "/api/operator/quiz/correct-answer", params: { correct_answer: "B" }, headers: operator_headers, as: :json
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(question.reload.correct_answer).to eq("A")
+      expect(response).to have_http_status(:ok)
+      expect(question.reload.correct_answer).to eq("B")
+    end
+
+    it "moves the relay selection to the next live question automatically" do
+      authenticate_operator(manager_enabled: true)
+      first = create_question(position: 1, is_relay_question: true)
+      second = create_question(position: 2, is_relay_question: true)
+
+      session = QuizSession.current
+      session.start!
+      session.reveal!
+      session.publish_next!
+
+      expect(first.reload.is_selected_relay_question).to be(false)
+      expect(second.reload.is_selected_relay_question).to be(true)
     end
 
     it "rejects invalid choices without changing the current answer" do

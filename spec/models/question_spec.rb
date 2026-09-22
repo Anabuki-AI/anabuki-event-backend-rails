@@ -198,12 +198,14 @@ RSpec.describe Question do
       expect(question.live_correct_answer_confirmed_at).to be_present
     end
 
-    it "rejects a live correct_answer change for a relay question that is not selected" do
-      described_class.create!(valid_attributes.merge(is_relay_question: true))
+    it "auto-selects the relay question when it becomes the live question, allowing a live correct_answer change" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
       session = QuizSession.current
       session.start!
 
-      expect { session.update_live_correct_answer!("C") }.to raise_error(QuizSession::InvalidTransition)
+      expect(question.reload.is_selected_relay_question).to be(true)
+      expect { session.update_live_correct_answer!("C") }.not_to raise_error
+      expect(question.reload.correct_answer).to eq("C")
     end
 
     it "rejects a live correct_answer change once the question has been revealed" do
@@ -273,6 +275,16 @@ RSpec.describe Question do
 
       question.update!(is_selected_relay_question: false)
       expect(question.reload.is_selected_relay_question).to be(false)
+    end
+
+    it "rejects unselecting the relay question that is currently live" do
+      question = described_class.create!(valid_attributes.merge(is_relay_question: true))
+      QuizSession.current.start!
+      expect(question.reload.is_selected_relay_question).to be(true)
+
+      question.update(is_selected_relay_question: false)
+      expect(question.errors.where(:is_selected_relay_question)).to be_present
+      expect(question.reload.is_selected_relay_question).to be(true)
     end
 
     it "forces is_selected_relay_question to false when a question is not (or is no longer) a relay question" do
