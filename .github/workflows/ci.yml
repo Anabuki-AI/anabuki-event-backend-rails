@@ -144,6 +144,7 @@ jobs:
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -299,6 +300,7 @@ jobs:
             printf 'GOOGLE_OAUTH_CALLBACK_URL=%s\nOPERATOR_GOOGLE_OAUTH_CALLBACK_URL=%s\n' "$GOOGLE_OAUTH_CALLBACK_URL" "$OPERATOR_GOOGLE_OAUTH_CALLBACK_URL"
             printf 'ADDITIONAL_ALLOWED_ORIGINS=%s\n' "$ADDITIONAL_ALLOWED_ORIGINS"
             printf 'R2_ENDPOINT=%s\nR2_BUCKET=%s\nR2_ACCESS_KEY_ID=%s\nR2_SECRET_ACCESS_KEY=%s\n' "$R2_ENDPOINT" "$R2_BUCKET" "$R2_ACCESS_KEY_ID" "$R2_SECRET_ACCESS_KEY"
+            if [ -n "${OPENROUTER_API_KEY:-}" ]; then printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY"; fi
           } > "$env_file"
           printf 'TUNNEL_TOKEN=%s\n' "$(<"$RUNNER_TEMP/tunnel-token")" > "$RUNNER_TEMP/cloudflared.env"
           chmod 600 "$env_file" "$RUNNER_TEMP/cloudflared.env"
