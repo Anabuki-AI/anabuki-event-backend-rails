@@ -137,11 +137,11 @@ RSpec.describe "Participant registration", type: :request do
     expect {
       post "/api/participants", params: registration.merge(displayName: "New Player"), as: :json
     }.to change(Participant, :count).by(1)
-      .and change(AuditLog, :count).by(1)
+      .and change(AuditLog, :count).by(2)
 
-    log = AuditLog.sole
-    expect(log.event_type).to eq("DISPLAY_NAME_MODERATION_FAILED")
+    log = AuditLog.find_by(event_type: "DISPLAY_NAME_MODERATION_FAILED")
     expect(log.detail).to eq("displayName" => "New Player", "failClosed" => false)
+    expect(AuditLog.where(event_type: "PARTICIPANT_REGISTERED")).to exist
   end
 
   it "rejects renaming to a display name that moderation flags as inappropriate" do

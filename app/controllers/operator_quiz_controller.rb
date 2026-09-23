@@ -31,17 +31,30 @@ class OperatorQuizController < ApplicationController
   end
 
   def start
-    QuizSession.current.start!
+    quiz_session = QuizSession.current
+    quiz_session.start!
+    AuditLogRecorder.record(type: "QUIZ_STARTED", identity: audit_actor_identity)
+    record_question_published(quiz_session)
     render json: quiz_state
   end
 
   def publish
-    QuizSession.current.publish_next!
+    quiz_session = QuizSession.current
+    quiz_session.publish_next!
+    record_question_published(quiz_session)
     render json: quiz_state
   end
 
   def update_correct_answer
-    QuizSession.current.update_live_correct_answer!(params[:correct_answer])
+    quiz_session = QuizSession.current
+    quiz_session.update_live_correct_answer!(params[:correct_answer])
+    AuditLogRecorder.record(
+      type: "LIVE_CORRECT_ANSWER_UPDATED",
+      identity: audit_actor_identity,
+      target_type: "QUESTION",
+      target_id: quiz_session.current_question_id,
+      detail: { "correctAnswer" => params[:correct_answer] }
+    )
     render json: quiz_state
   end
 
@@ -49,21 +62,46 @@ class OperatorQuizController < ApplicationController
     if params[:immediate] == true
       # Backward-compatible automatic expiry hint, NOT a force-close flag.
       # The model rejects early/browser-skewed expiry using the server clock.
+      # ANSWER_WINDOW_CLOSED is recorded by QuizSession itself once the model
+      # actually transitions the phase, so no separate entry is needed here.
       QuizSession.current.close!
     else
-      # A manual operator close starts the shared ten-second countdown.
-      QuizSession.current.request_close!
+      # A manual operator close starts the shared ten-second countdown; the
+      # eventual close is recorded separately (ANSWER_WINDOW_CLOSED) once the
+      # countdown elapses and the phase actually transitions.
+      quiz_session = QuizSession.current
+      quiz_session.request_close!
+      AuditLogRecorder.record(
+        type: "ANSWER_WINDOW_CLOSE_REQUESTED",
+        identity: audit_actor_identity,
+        target_type: "QUESTION",
+        target_id: quiz_session.current_question_id
+      )
     end
     render json: quiz_state
   end
 
   def reveal
-    QuizSession.current.reveal!
+    quiz_session = QuizSession.current
+    quiz_session.reveal!
+    AuditLogRecorder.record(
+      type: "ANSWER_REVEALED",
+      identity: audit_actor_identity,
+      target_type: "QUESTION",
+      target_id: quiz_session.current_question_id,
+      detail: { "correctAnswer" => quiz_session.current_question&.correct_answer }
+    )
     render json: quiz_state
   end
 
   def finish
-    QuizSession.current.finish!
+    quiz_session = QuizSession.current
+    quiz_session.finish!
+    AuditLogRecorder.record(
+      type: "QUIZ_FINISHED",
+      identity: audit_actor_identity,
+      detail: { "finishedElapsedSeconds" => quiz_session.finished_elapsed_seconds }
+    )
     render json: quiz_state
   end
 
@@ -93,6 +131,22 @@ class OperatorQuizController < ApplicationController
   end
 
   private
+
+  # Shared by #start (first question) and #publish (every question after):
+  # both are the one place "a question became visible to participants" can
+  # happen, so this is the single point that records QUESTION_PUBLISHED.
+  def record_question_published(quiz_session)
+    question = quiz_session.current_question
+    return unless question
+
+    AuditLogRecorder.record(
+      type: "QUESTION_PUBLISHED",
+      identity: audit_actor_identity,
+      target_type: "QUESTION",
+      target_id: question.id,
+      detail: { "position" => question.position, "isRelayQuestion" => question.is_relay_question }
+    )
+  end
 
   def parse_reactions_cursor(value)
     return nil if value.blank?
