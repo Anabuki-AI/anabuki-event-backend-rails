@@ -117,49 +117,23 @@ class QuizSession < ApplicationRecord
       else
         existing = ParticipantQuizConfidenceSelection.find_by(participant:, question:)
         if existing.nil?
-          eliminated = eliminated_choice_for(question, confidence_level, choice:)
-          created = ParticipantQuizConfidenceSelection.create!(
+          ParticipantQuizConfidenceSelection.create!(
             participant:,
             question:,
             confidence_level:,
-            eliminated_choice: eliminated,
+            eliminated_choice: eliminated_choice_for(question, confidence_level, choice:),
             locked_at: Time.current
           )
-          AuditLogRecorder.record(
-            type: "CONFIDENCE_LEVEL_SELECTED",
-            target_type: "PARTICIPANT_QUIZ_CONFIDENCE_SELECTION",
-            target_id: created.id,
-            detail: {
-              "participantId" => participant.id,
-              "questionId" => question.id,
-              "confidenceLevel" => confidence_level,
-              "eliminatedChoice" => eliminated
-            }
-          )
-          created
         elsif existing.confidence_level == confidence_level
           # Idempotent retry (including Lv.1, whose elimination never redraws).
           existing
         elsif existing.confidence_level == "low"
           raise InvalidTransition, "Confidence level has already been selected"
         else
-          previous_confidence_level = existing.confidence_level
-          eliminated = eliminated_choice_for(question, confidence_level, choice:)
-          # Recorded before the overwrite, matching the answer history pattern:
-          # participant_quiz_confidence_selections only keeps the current value.
-          AuditLogRecorder.record(
-            type: "CONFIDENCE_LEVEL_CHANGED",
-            target_type: "PARTICIPANT_QUIZ_CONFIDENCE_SELECTION",
-            target_id: existing.id,
-            detail: {
-              "participantId" => participant.id,
-              "questionId" => question.id,
-              "previousConfidenceLevel" => previous_confidence_level,
-              "confidenceLevel" => confidence_level,
-              "eliminatedChoice" => eliminated
-            }
+          existing.update!(
+            confidence_level:,
+            eliminated_choice: eliminated_choice_for(question, confidence_level, choice:)
           )
-          existing.update!(confidence_level:, eliminated_choice: eliminated)
           existing
         end
       end
@@ -359,24 +333,9 @@ class QuizSession < ApplicationRecord
     started_at + limit.seconds if started_at && limit
   end
 
-  # The single choke point for the answer window actually closing, regardless
-  # of which caller (an operator's manual close, an expired time limit found
-  # by a participant/operator poll, or the delayed close job) triggered it.
-  # Recording the audit entry here instead of at each caller guarantees
-  # exactly one ANSWER_WINDOW_CLOSED row per transition and never one per poll.
   def close_expired_answer_window_under_lock!
     deadline = answer_deadline
-    return unless deadline && Time.current >= deadline
-
-    was_manual_close = phase == "closing"
-    question_id = current_question_id
-    update!(phase: "closed", phase_started_at: deadline)
-    AuditLogRecorder.record(
-      type: "ANSWER_WINDOW_CLOSED",
-      target_type: "QUESTION",
-      target_id: question_id,
-      detail: { "reason" => was_manual_close ? "operator_requested" : "time_limit_expired" }
-    )
+    update!(phase: "closed", phase_started_at: deadline) if deadline && Time.current >= deadline
   end
 
   def answer_window_matches?(question, question_id)

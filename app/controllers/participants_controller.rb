@@ -13,17 +13,6 @@ class ParticipantsController < ApplicationController
     end
 
     participant_auth.write_session_cookie!(raw_token)
-    AuditLogRecorder.record(
-      type: "PARTICIPANT_REGISTERED",
-      target_type: "PARTICIPANT",
-      target_id: participant.id,
-      detail: {
-        "displayName" => participant.display_name,
-        "gender" => participant.gender,
-        "ageGroup" => participant.age_group,
-        "studentType" => participant.student_type
-      }
-    )
     render json: participant_json(participant, session.expires_at), status: :created
   end
 
@@ -36,19 +25,8 @@ class ParticipantsController < ApplicationController
     require_participant_same_origin!
 
     session = participant_auth.current_session!
-    participant = session.participant
-    previous_display_name = participant.display_name
-    next_display_name = params[:displayName].to_s.strip
-    participant.update!(display_name: next_display_name)
-    if next_display_name != previous_display_name
-      AuditLogRecorder.record(
-        type: "PARTICIPANT_DISPLAY_NAME_CHANGED",
-        target_type: "PARTICIPANT",
-        target_id: participant.id,
-        detail: { "previousDisplayName" => previous_display_name, "displayName" => next_display_name }
-      )
-    end
-    render json: participant_json(participant, session.expires_at)
+    session.participant.update!(display_name: params[:displayName].to_s.strip)
+    render json: participant_json(session.participant, session.expires_at)
   end
 
   def presence
@@ -86,15 +64,7 @@ class ParticipantsController < ApplicationController
 
   def destroy_session
     require_participant_same_origin!
-    session = participant_auth.current_session
     participant_auth.logout!
-    if session
-      AuditLogRecorder.record(
-        type: "PARTICIPANT_LOGGED_OUT",
-        target_type: "PARTICIPANT",
-        target_id: session.participant_id
-      )
-    end
     head :no_content
   end
 

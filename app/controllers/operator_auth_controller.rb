@@ -6,15 +6,7 @@ class OperatorAuthController < ApplicationController
 
   def logout
     require_same_origin!(config: operator_auth_config)
-    session = begin
-      operator_auth.any_session!
-    rescue OperatorAuthError
-      nil
-    end
     operator_auth.logout!
-    if session && !session.applicant?
-      AuditLogRecorder.record(type: "OPERATOR_LOGGED_OUT", identity: session.identity)
-    end
     head :no_content
   end
 
