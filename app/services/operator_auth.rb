@@ -52,6 +52,9 @@ class OperatorAuth
     source = manager_access?(identity) ? "MANAGER" : "APPLICANT"
     session_key = token
     upsert_device_session!(identity:, session_key:, source:)
+    # Mirrors AdminAuth: only a real manager login is audit-worthy, matching
+    # ADMIN_LOGIN_SUCCEEDED skipping plain applicant sign-ins.
+    AuditLogRecorder.record(type: "OPERATOR_LOGIN_SUCCEEDED", identity:) if source == "MANAGER"
     write_cookie(source == "APPLICANT" ? APPLICANT_SESSION_COOKIE : SESSION_COOKIE, session_key, source == "APPLICANT" ? APPLICANT_TTL : SESSION_TTL)
     @cookies.delete(OAUTH_STATE_COOKIE, cookie_options)
     @config.operator_frontend_url

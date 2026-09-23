@@ -25,17 +25,49 @@ class ParticipantAnswer < ApplicationRecord
         raise AlreadyRecorded, "Confidence level cannot be changed"
       end
 
-      existing.update!(
-        choice:,
-        confidence_level:,
-        awarded_points: awarded_points_for(question:, choice:, confidence_level:, multiplier:)
+      previous_choice = existing.choice
+      previous_confidence_level = existing.confidence_level
+      previous_awarded_points = existing.awarded_points
+      new_awarded_points = awarded_points_for(question:, choice:, confidence_level:, multiplier:)
+
+      # Recorded before the overwrite: participant_answers only ever keeps the
+      # current value, so the before/after pair here is the only place that
+      # change history survives.
+      AuditLogRecorder.record(
+        type: "ANSWER_CHANGED",
+        target_type: "PARTICIPANT_ANSWER",
+        target_id: existing.id,
+        detail: {
+          "participantId" => participant.id,
+          "questionId" => question.id,
+          "previousChoice" => previous_choice,
+          "choice" => choice,
+          "previousConfidenceLevel" => previous_confidence_level,
+          "confidenceLevel" => confidence_level,
+          "previousAwardedPoints" => previous_awarded_points,
+          "awardedPoints" => new_awarded_points
+        }
       )
+
+      existing.update!(choice:, confidence_level:, awarded_points: new_awarded_points)
       return existing
     end
 
     answer = new(participant:, question:, choice:, confidence_level:)
     answer.awarded_points = awarded_points_for(question:, choice:, confidence_level:, multiplier:)
     answer.save!
+    AuditLogRecorder.record(
+      type: "ANSWER_SUBMITTED",
+      target_type: "PARTICIPANT_ANSWER",
+      target_id: answer.id,
+      detail: {
+        "participantId" => participant.id,
+        "questionId" => question.id,
+        "choice" => choice,
+        "confidenceLevel" => confidence_level,
+        "awardedPoints" => answer.awarded_points
+      }
+    )
     answer
   end
 
