@@ -34,7 +34,7 @@ gem "thruster", require: false
 gem "rack-cors", "~> 3.0"
 
 gem "que", "~> 2.4"
-gem "sentry-rails", "~> 7.0"
+gem "sentry-rails", "~> 7.1"
 # Active Storage's S3 service is used for Cloudflare R2 in production.
 gem "aws-sdk-s3", "~> 1.0", require: false
 # Rails 8.1 calls JSON.parse with options; json 3.0 removed that API.
