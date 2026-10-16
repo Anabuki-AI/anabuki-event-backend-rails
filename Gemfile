@@ -38,7 +38,7 @@ gem "sentry-rails", "~> 7.0"
 # Active Storage's S3 service is used for Cloudflare R2 in production.
 gem "aws-sdk-s3", "~> 1.0", require: false
 # Rails 8.1 calls JSON.parse with options; json 3.0 removed that API.
-gem "json", "< 3.0"
+gem "json", "< 4.0"
 
 group :development, :test do
   gem "rspec-rails", "~> 8.0"
