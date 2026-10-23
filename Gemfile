@@ -10,7 +10,7 @@ gem "puma", ">= 5.0"
 # gem "jbuilder"
 
 # Verifies Google OpenID Connect ID tokens against Google's signing keys.
-gem "googleauth", "~> 1.12"
+gem "googleauth", "~> 1.17"
 # Organizes authorization decisions without replacing the existing AdminAuth flow.
 gem "pundit", "~> 2.5"
 
